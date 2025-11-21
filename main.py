@@ -70,6 +70,7 @@ class HelpDialog(QDialog):
         grid.setColumnStretch(1, 2)
 
         shortcuts = [
+            ("O", "Open directory"),
             ("←", "Previous image"),
             ("→", "Next image"),
             ("R", "Rotate image 90° clockwise"),
@@ -139,6 +140,9 @@ class PhotoViewer(QMainWindow):
 
         if event.key() == Qt.Key.Key_Question:
             self.show_help()
+
+        if event.key() == Qt.Key.Key_O:
+            self.action_open_button()
 
         if self.image_paths:
             if event.key() == Qt.Key.Key_Left:

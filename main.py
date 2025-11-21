@@ -173,7 +173,10 @@ class PhotoViewer(QMainWindow):
             all_files = Path(directory).iterdir()
             image_paths = [f for f in all_files if f.suffix in exts]
             image_paths = sorted(image_paths)
-            self.image_paths = PointedList(image_paths)
+            if len(image_paths) == 0:
+                raise ValueError("Directory does not contain any image files")
+            else:
+                self.image_paths = PointedList(image_paths)
 
         else:
             assert ValueError(f"Directory {directory}")

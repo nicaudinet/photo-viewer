@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from PIL import Image
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -79,6 +80,8 @@ class PhotoViewer(QMainWindow):
                 self.image_paths.prev()
             if event.key() == Qt.Key.Key_Right:
                 self.image_paths.next()
+            if event.key() == Qt.Key.Key_R:
+                self.rotate_image(self.image_paths.current())
             self.open_photo(self.image_paths.current())
 
     def toggle_fullscreen(self):
@@ -110,6 +113,14 @@ class PhotoViewer(QMainWindow):
             Qt.TransformationMode.SmoothTransformation,
         )
         self.image_label.setPixmap(scaled_pixmap)
+
+    def rotate_image(self, file_path: Path):
+        try:
+            image = Image.open(file_path)
+            image = image.rotate(-90, expand=True)
+            image.save(file_path)
+        except Exception as e:
+            print(f"Error rotating image: {e}")
 
 
 if __name__ == "__main__":

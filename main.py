@@ -74,6 +74,12 @@ class PhotoViewer(QMainWindow):
         if event.key() == Qt.Key.Key_F:
             self.toggle_fullscreen()
 
+        if self.image_paths:
+            if event.key() == Qt.Key.Key_Left:
+                self.image_paths.prev()
+            if event.key() == Qt.Key.Key_Right:
+                self.image_paths.next()
+            self.open_photo(self.image_paths.current())
 
     def toggle_fullscreen(self):
         if self.isFullScreen():

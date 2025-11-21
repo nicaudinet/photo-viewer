@@ -67,10 +67,19 @@ class PhotoViewer(QMainWindow):
             self.open_photo(self.image_paths.current())
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
-            print("Escape was pressed")
-        elif event.key() == Qt.Key.Key_Q:
+
+        if event.key() == Qt.Key.Key_Q:
             self.close()
+
+        if event.key() == Qt.Key.Key_F:
+            self.toggle_fullscreen()
+
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
 
     def choose_directory(self):
         directory = QFileDialog.getExistingDirectory(

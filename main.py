@@ -169,7 +169,10 @@ class PhotoViewer(QMainWindow):
             self.close()
 
         if event.key() == Qt.Key.Key_F:
-            self.toggle_fullscreen()
+            if self.isFullScreen():
+                self.showNormal()
+            else:
+                self.showFullScreen()
 
         if event.key() == Qt.Key.Key_Question:
             if self.help_overlay.isVisible():
@@ -215,12 +218,6 @@ class PhotoViewer(QMainWindow):
                         self.to_delete.add(current)
                         self.delete_label.show()
                 self.open_photo(current)
-
-    def toggle_fullscreen(self):
-        if self.isFullScreen():
-            self.showNormal()
-        else:
-            self.showFullScreen()
 
     def resizeEvent(self, event):
         """

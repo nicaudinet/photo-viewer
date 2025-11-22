@@ -74,9 +74,10 @@ class HelpDialog(QDialog):
             ("←", "Previous image"),
             ("→", "Next image"),
             ("R", "Rotate image 90° clockwise"),
-            ("L", "Toggle favourite (like)"),
-            ("F", "Toggle fullscreen"),
-            ("?", "Show this help"),
+            ("L", "Mark as favourite (toggle)"),
+            ("D", "Mark to delete (toggle)"),
+            ("F", "Fullscreen (toggle)"),
+            ("?", "Show this help (toggle)"),
             ("Q", "Quit application"),
         ]
 

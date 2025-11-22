@@ -138,8 +138,21 @@ class PhotoViewer(QMainWindow):
         self.star_label.hide()
         self.star_label.raise_()
 
+        self.delete_label = QLabel(central_widget)
+        delete_icon = QIcon("./icons/delete.png")
+        delete_pixmap = delete_icon.pixmap(self.icon_size, self.icon_size)
+        self.delete_label.setPixmap(delete_pixmap)
+        self.delete_label.setFixedSize(self.icon_size, self.icon_size)
+        self.delete_label.hide()
+        self.delete_label.raise_()
+
+        #############
+        # App State #
+        #############
+
         self.image_paths = None
         self.favourites = set()
+        self.to_delete = set()
 
     def action_open_button(self):
         self.choose_directory()
@@ -186,6 +199,17 @@ class PhotoViewer(QMainWindow):
                     self.star_label.show()
                 self.open_photo(current)
 
+            if event.key() == Qt.Key.Key_D:
+                current = self.image_paths.current()
+                if current in self.to_delete:
+                    self.to_delete.remove(current)
+                    self.delete_label.hide()
+                else:
+                    if not current in self.favourites:
+                        self.to_delete.add(current)
+                        self.delete_label.show()
+                self.open_photo(current)
+
     def toggle_fullscreen(self):
         if self.isFullScreen():
             self.showNormal()
@@ -204,6 +228,7 @@ class PhotoViewer(QMainWindow):
         x = self.centralWidget().width() - self.icon_margin - self.icon_size
         y = self.icon_margin
         self.star_label.move(x, y)
+        self.delete_label.move(x, y)
 
     def choose_directory(self):
         directory = QFileDialog.getExistingDirectory(

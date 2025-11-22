@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from PIL import Image
+import math
 
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -13,8 +14,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QFileDialog,
 )
-from PySide6.QtGui import QPixmap, QFont
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QFont, QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QPointF
 
 
 class PointedList:
@@ -74,6 +75,7 @@ class HelpDialog(QDialog):
             ("←", "Previous image"),
             ("→", "Next image"),
             ("R", "Rotate image 90° clockwise"),
+            ("L", "Toggle favourite (like)"),
             ("F", "Toggle fullscreen"),
             ("?", "Show this help"),
             ("Q", "Quit application"),
@@ -93,7 +95,6 @@ class HelpDialog(QDialog):
             desc_label_font = QFont()
             desc_label_font.setPointSize(16)
             desc_label.setFont(desc_label_font)
-            # desc_label.setStyleSheet("padding: 5px;")
             grid.addWidget(desc_label, i, 1)
 
         layout.addLayout(grid)
@@ -102,7 +103,9 @@ class HelpDialog(QDialog):
 class PhotoViewer(QMainWindow):
 
     def __init__(self):
+
         super().__init__()
+
         self.setWindowTitle("Photo Viewer")
         self.setGeometry(100, 100, 800, 600)
 
@@ -122,6 +125,7 @@ class PhotoViewer(QMainWindow):
         layout.addWidget(self.image_label)
 
         self.image_paths = None
+        self.favourites = set()
 
     def action_open_button(self):
         self.choose_directory()
@@ -143,6 +147,15 @@ class PhotoViewer(QMainWindow):
 
         if event.key() == Qt.Key.Key_O:
             self.action_open_button()
+
+        if self.image_paths:
+            if event.key() == Qt.Key.Key_L:
+                current = self.image_paths.current()
+                if current in self.favourites:
+                    self.favourites.remove(current)
+                else:
+                    self.favourites.add(current)
+                self.open_photo(current)
 
         if self.image_paths:
             if event.key() == Qt.Key.Key_Left:
@@ -183,12 +196,38 @@ class PhotoViewer(QMainWindow):
 
     def open_photo(self, file_path: Path):
         pixmap = QPixmap(file_path)
-        scaled_pixmap = pixmap.scaled(
+        pixmap = pixmap.scaled(
             self.image_label.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.image_label.setPixmap(scaled_pixmap)
+        if file_path in self.favourites:
+            self.draw_star(pixmap)
+        self.image_label.setPixmap(pixmap)
+
+    def create_star_points(self, cx, cy, size):
+        points = []
+        for i in range(10):
+            angle = math.pi / 2 + (2 * math.pi * i / 10)
+            radius = size / 2 if i % 2 == 0 else size / 4
+            x = cx + radius * math.cos(angle)
+            y = cy - radius * math.sin(angle)
+            points.append(QPointF(x, y))
+        return points
+
+    def draw_star(self, pixmap):
+        star_size = 30
+        margin = 10
+        cx = pixmap.width() - margin - star_size // 2
+        cy = margin + star_size // 2
+        points = self.create_star_points(cx, cy, star_size)
+        color = QColor(252, 194, 0)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(color)
+        painter.setPen(QPen(color, 2))
+        painter.drawPolygon(points)
+        painter.end()
 
     def rotate_image(self, file_path: Path):
         try:

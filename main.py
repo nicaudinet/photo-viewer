@@ -4,7 +4,6 @@ from PIL import Image
 
 from PySide6.QtWidgets import (
     QGridLayout,
-    QDialog,
     QApplication,
     QMainWindow,
     QWidget,
@@ -39,18 +38,15 @@ class PointedList:
         return self.current()
 
 
-class HelpDialog(QDialog):
+class HelpOverlay(QWidget):
 
     def __init__(self, parent=None):
 
         super().__init__(parent)
 
-        self.setWindowTitle("Keyboard Shortcuts")
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog
-        )
+        self.setMinimumWidth(300)
+
+        self.setAutoFillBackground(True)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -124,6 +120,11 @@ class PhotoViewer(QMainWindow):
         self.image_label.setMinimumSize(400, 400)
         layout.addWidget(self.image_label)
 
+        self.help_overlay = HelpOverlay(central_widget)
+        self.help_overlay.adjustSize()  # Has 0 size otherwise
+        self.help_overlay.hide()
+        self.help_overlay.raise_()
+
         #########
         # Icons #
         #########
@@ -171,7 +172,11 @@ class PhotoViewer(QMainWindow):
             self.toggle_fullscreen()
 
         if event.key() == Qt.Key.Key_Question:
-            self.show_help()
+            if self.help_overlay.isVisible():
+                self.help_overlay.hide()
+            else:
+                self.help_overlay.show()
+                # self.help_overlay.raise_()
 
         if event.key() == Qt.Key.Key_O:
             self.action_open_button()
@@ -217,15 +222,15 @@ class PhotoViewer(QMainWindow):
         else:
             self.showFullScreen()
 
-    def show_help(self):
-        dialog = HelpDialog(self)
-        dialog.exec()
-
     def resizeEvent(self, event):
         """
         Update resizeEvent to automatically move icons to the top-right corner
         """
         super().resizeEvent(event)
+        x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
+        y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
+        self.help_overlay.move(x, y)
+
         x = self.centralWidget().width() - self.icon_margin - self.icon_size
         y = self.icon_margin
         self.star_label.move(x, y)

@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 from PIL import Image
-import math
 
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -14,8 +13,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QFileDialog,
 )
-from PySide6.QtGui import QPixmap, QFont, QPainter, QColor, QPen
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QPixmap, QFont, QIcon
+from PySide6.QtCore import Qt
 
 
 class PointedList:
@@ -124,6 +123,21 @@ class PhotoViewer(QMainWindow):
         self.image_label.setMinimumSize(400, 400)
         layout.addWidget(self.image_label)
 
+        #########
+        # Icons #
+        #########
+
+        self.icon_size: int = 50
+        self.icon_margin: int = 20
+
+        self.star_label = QLabel(central_widget)
+        star_icon = QIcon("./icons/star.png")
+        star_pixmap = star_icon.pixmap(self.icon_size, self.icon_size)
+        self.star_label.setPixmap(star_pixmap)
+        self.star_label.setFixedSize(self.icon_size, self.icon_size)
+        self.star_label.hide()
+        self.star_label.raise_()
+
         self.image_paths = None
         self.favourites = set()
 
@@ -153,8 +167,10 @@ class PhotoViewer(QMainWindow):
                 current = self.image_paths.current()
                 if current in self.favourites:
                     self.favourites.remove(current)
+                    self.star_label.hide()
                 else:
                     self.favourites.add(current)
+                    self.star_label.show()
                 self.open_photo(current)
 
         if self.image_paths:
@@ -175,6 +191,15 @@ class PhotoViewer(QMainWindow):
     def show_help(self):
         dialog = HelpDialog(self)
         dialog.exec()
+
+    def resizeEvent(self, event):
+        """
+        Update resizeEvent to automatically move icons to the top-right corner
+        """
+        super().resizeEvent(event)
+        x = self.centralWidget().width() - self.icon_margin - self.icon_size
+        y = self.icon_margin
+        self.star_label.move(x, y)
 
     def choose_directory(self):
         directory = QFileDialog.getExistingDirectory(
@@ -202,32 +227,10 @@ class PhotoViewer(QMainWindow):
             Qt.TransformationMode.SmoothTransformation,
         )
         if file_path in self.favourites:
-            self.draw_star(pixmap)
+            self.star_label.show()
+        else:
+            self.star_label.hide()
         self.image_label.setPixmap(pixmap)
-
-    def create_star_points(self, cx, cy, size):
-        points = []
-        for i in range(10):
-            angle = math.pi / 2 + (2 * math.pi * i / 10)
-            radius = size / 2 if i % 2 == 0 else size / 4
-            x = cx + radius * math.cos(angle)
-            y = cy - radius * math.sin(angle)
-            points.append(QPointF(x, y))
-        return points
-
-    def draw_star(self, pixmap):
-        star_size = 30
-        margin = 10
-        cx = pixmap.width() - margin - star_size // 2
-        cy = margin + star_size // 2
-        points = self.create_star_points(cx, cy, star_size)
-        color = QColor(252, 194, 0)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(color)
-        painter.setPen(QPen(color, 2))
-        painter.drawPolygon(points)
-        painter.end()
 
     def rotate_image(self, file_path: Path):
         try:

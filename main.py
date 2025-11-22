@@ -163,6 +163,19 @@ class PhotoViewer(QMainWindow):
             self.action_open_button()
 
         if self.image_paths:
+
+            if event.key() == Qt.Key.Key_Left:
+                self.image_paths.prev()
+                self.open_photo(self.image_paths.current())
+
+            if event.key() == Qt.Key.Key_Right:
+                self.image_paths.next()
+                self.open_photo(self.image_paths.current())
+
+            if event.key() == Qt.Key.Key_R:
+                self.rotate_image(self.image_paths.current())
+                self.open_photo(self.image_paths.current())
+
             if event.key() == Qt.Key.Key_L:
                 current = self.image_paths.current()
                 if current in self.favourites:
@@ -172,15 +185,6 @@ class PhotoViewer(QMainWindow):
                     self.favourites.add(current)
                     self.star_label.show()
                 self.open_photo(current)
-
-        if self.image_paths:
-            if event.key() == Qt.Key.Key_Left:
-                self.image_paths.prev()
-            if event.key() == Qt.Key.Key_Right:
-                self.image_paths.next()
-            if event.key() == Qt.Key.Key_R:
-                self.rotate_image(self.image_paths.current())
-            self.open_photo(self.image_paths.current())
 
     def toggle_fullscreen(self):
         if self.isFullScreen():

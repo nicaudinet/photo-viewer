@@ -227,6 +227,10 @@ class PhotoViewer(QMainWindow):
         Update resizeEvent to automatically move icons to the top-right corner
         """
         super().resizeEvent(event)
+
+        if self.image_paths:
+            self.open_photo(self.image_paths.current())
+
         x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
         y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
         self.help_overlay.move(x, y)

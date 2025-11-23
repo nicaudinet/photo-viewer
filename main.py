@@ -1,3 +1,4 @@
+from typing import Optional, Callable, List
 import sys
 from pathlib import Path
 from PIL import Image
@@ -11,8 +12,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QLabel,
     QFileDialog,
+    QScrollArea,
 )
-from PySide6.QtGui import QPixmap, QFont, QIcon
+from PySide6.QtGui import QPixmap, QFont, QIcon, QMouseEvent
 from PySide6.QtCore import Qt
 
 
@@ -36,6 +38,10 @@ class PointedList:
     def prev(self):
         self.index = (self.index - 1) % len(self.list)
         return self.current()
+
+    def goto(self, index: int):
+        assert 0 <= index < len(self.list), "Index is not in the list"
+        self.index = index
 
 
 class HelpOverlay(QWidget):
@@ -69,6 +75,7 @@ class HelpOverlay(QWidget):
             ("O", "Open directory"),
             ("←", "Previous image"),
             ("→", "Next image"),
+            ("W", "Wall view (toggle)"),
             ("R", "Rotate image 90° clockwise"),
             ("L", "Mark as favourite (toggle)"),
             ("D", "Mark to delete (toggle)"),
@@ -96,6 +103,110 @@ class HelpOverlay(QWidget):
         layout.addLayout(grid)
 
 
+class Thumbnail(QLabel):
+
+    THUMBNAIL_WIDTH = 300
+
+    def __init__(self, file_path: Path, index: int, parent=None):
+
+        super().__init__(parent)
+
+        self.index: int = index
+        self.click_callback: Optional[Callable] = None
+
+        pixmap = QPixmap(file_path)
+        pixmap = pixmap.scaledToWidth(
+            self.THUMBNAIL_WIDTH,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.setPixmap(pixmap)
+        self.setFixedSize(pixmap.size())
+
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def setClickCallback(self, callback: Callable):
+        self.click_callback = callback
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton and self.click_callback:
+            self.click_callback(self.index)
+
+
+class MasonryWall(QWidget):
+
+    def __init__(self, parent=None):
+
+        super().__init__(parent)
+
+        self.thumbnails: List[Thumbnail] = []
+        self.image_paths: List[Path] = []
+
+        self.column_count: int = 3
+        self.spacing: int = 10
+        self.thumbnail_width: int = 300
+        self.click_callback: Optional[Callable] = None
+
+    def setClickCallback(self, callback: Callable):
+        self.click_callback = callback
+        for thumbnail in self.thumbnails:
+            thumbnail.setClickCallback(callback)
+
+    def setImages(self, image_paths: List[Path]):
+
+        self.image_paths = image_paths
+
+        for thumbnail in self.thumbnails:
+            thumbnail.deleteLater()
+        self.thumbnails.clear()
+
+        for i, image_path in enumerate(image_paths):
+            thumbnail = Thumbnail(image_path, i, self)
+            if self.click_callback:
+                thumbnail.setClickCallback(self.click_callback)
+            self.thumbnails.append(thumbnail)
+
+        self.layout_masonry()
+
+    def layout_masonry(self):
+
+        if not self.thumbnails:
+            return
+
+        column_width = Thumbnail.THUMBNAIL_WIDTH
+        column_heights = [self.spacing] * self.column_count
+
+        for thumbnail in self.thumbnails:
+            shortest_column = column_heights.index(min(column_heights))
+            x = self.spacing + shortest_column * (column_width + self.spacing)
+            y = column_heights[shortest_column]
+            thumbnail.move(x, y)
+            column_heights[shortest_column] += thumbnail.height() + self.spacing
+
+        for thumbnail in self.thumbnails:
+            thumbnail.show()
+
+        self.setMinimumHeight(max(column_heights))
+
+
+class MasonryScrollArea(QScrollArea):
+
+    def __init__(self, parent=None):
+
+        super().__init__(parent)
+
+        self.masonry_wall = MasonryWall()
+        self.setWidget(self.masonry_wall)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    def setImages(self, image_paths: List[Path]):
+        self.masonry_wall.setImages(image_paths)
+
+    def setClickCallback(self, callback: Callable):
+        self.masonry_wall.setClickCallback(callback)
+
+
 class PhotoViewer(QMainWindow):
 
     def __init__(self):
@@ -119,6 +230,11 @@ class PhotoViewer(QMainWindow):
         self.image_label.setStyleSheet("border: 2px dashed #aaa;")
         self.image_label.setMinimumSize(400, 400)
         layout.addWidget(self.image_label)
+
+        self.masonry_wall = MasonryScrollArea()
+        self.masonry_wall.setClickCallback(self.on_thumbnail_clicked)
+        self.masonry_wall.hide()
+        layout.addWidget(self.masonry_wall)
 
         self.help_overlay = HelpOverlay(central_widget)
         self.help_overlay.adjustSize()  # Has 0 size otherwise
@@ -155,6 +271,7 @@ class PhotoViewer(QMainWindow):
         self.image_paths = None
         self.favourites = set()
         self.to_delete = set()
+        self.in_wall_view = False
 
     def action_open_button(self):
         self.choose_directory()
@@ -219,13 +336,19 @@ class PhotoViewer(QMainWindow):
                         self.delete_label.show()
                 self.open_photo(current)
 
+            if event.key() == Qt.Key.Key_W:
+                if self.in_wall_view:
+                    self.switch_to_single_view()
+                else:
+                    self.switch_to_wall_view()
+
     def resizeEvent(self, event):
         """
         Update resizeEvent to automatically move icons to the top-right corner
         """
         super().resizeEvent(event)
 
-        if self.image_paths:
+        if self.image_paths and not self.in_wall_view:
             self.open_photo(self.image_paths.current())
 
         x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
@@ -275,6 +398,30 @@ class PhotoViewer(QMainWindow):
             image.save(file_path)
         except Exception as e:
             print(f"Error rotating image: {e}")
+
+    def on_thumbnail_clicked(self, index: int):
+        if self.image_paths:
+            self.image_paths.goto(index)
+            self.switch_to_single_view()
+
+    def switch_to_single_view(self):
+        if self.image_paths:
+            self.masonry_wall.hide()
+            self.image_label.show()
+            self.in_wall_view = False
+            self.open_photo(self.image_paths.current())
+            self.setFocus()
+
+    def switch_to_wall_view(self):
+        if self.image_paths:
+            self.image_label.hide()
+            self.star_label.hide()
+            self.delete_label.hide()
+            self.help_overlay.hide()
+
+            self.masonry_wall.setImages(self.image_paths.list)
+            self.masonry_wall.show()
+            self.in_wall_view = True
 
 
 if __name__ == "__main__":

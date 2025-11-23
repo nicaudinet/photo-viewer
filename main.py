@@ -278,7 +278,7 @@ class PhotoViewer(QMainWindow):
         if self.image_paths:
             self.open_button.hide()
             self.image_label.setStyleSheet("")
-            self.open_photo(self.image_paths.current())
+            self.open_photo()
 
     def keyPressEvent(self, event):
 
@@ -305,15 +305,15 @@ class PhotoViewer(QMainWindow):
 
             if event.key() == Qt.Key.Key_Left:
                 self.image_paths.prev()
-                self.open_photo(self.image_paths.current())
+                self.open_photo()
 
             if event.key() == Qt.Key.Key_Right:
                 self.image_paths.next()
-                self.open_photo(self.image_paths.current())
+                self.open_photo()
 
             if event.key() == Qt.Key.Key_R:
                 self.rotate_image(self.image_paths.current())
-                self.open_photo(self.image_paths.current())
+                self.open_photo()
 
             if event.key() == Qt.Key.Key_L:
                 current = self.image_paths.current()
@@ -323,7 +323,7 @@ class PhotoViewer(QMainWindow):
                 else:
                     self.favourites.add(current)
                     self.star_label.show()
-                self.open_photo(current)
+                self.open_photo()
 
             if event.key() == Qt.Key.Key_D:
                 current = self.image_paths.current()
@@ -334,7 +334,7 @@ class PhotoViewer(QMainWindow):
                     if not current in self.favourites:
                         self.to_delete.add(current)
                         self.delete_label.show()
-                self.open_photo(current)
+                self.open_photo()
 
             if event.key() == Qt.Key.Key_W:
                 if self.in_wall_view:
@@ -349,7 +349,7 @@ class PhotoViewer(QMainWindow):
         super().resizeEvent(event)
 
         if self.image_paths and not self.in_wall_view:
-            self.open_photo(self.image_paths.current())
+            self.open_photo()
 
         x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
         y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
@@ -378,18 +378,20 @@ class PhotoViewer(QMainWindow):
         else:
             assert ValueError(f"Directory {directory}")
 
-    def open_photo(self, file_path: Path):
-        pixmap = QPixmap(file_path)
-        pixmap = pixmap.scaled(
-            self.image_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        if file_path in self.favourites:
-            self.star_label.show()
-        else:
-            self.star_label.hide()
-        self.image_label.setPixmap(pixmap)
+    def open_photo(self):
+        if self.image_paths:
+            current = self.image_paths.current()
+            pixmap = QPixmap(current)
+            pixmap = pixmap.scaled(
+                self.image_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            if current in self.favourites:
+                self.star_label.show()
+            else:
+                self.star_label.hide()
+            self.image_label.setPixmap(pixmap)
 
     def rotate_image(self, file_path: Path):
         try:

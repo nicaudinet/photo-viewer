@@ -179,7 +179,7 @@ class PhotoViewer(QMainWindow):
         if directory:
             exts = (".png", ".jpg", ".jpeg")
             all_files = Path(directory).iterdir()
-            image_paths = [f for f in all_files if f.suffix in exts]
+            image_paths = [f for f in all_files if f.suffix.lower() in exts]
             image_paths = sorted(image_paths)
             if len(image_paths) == 0:
                 raise ValueError("Directory does not contain any image files")

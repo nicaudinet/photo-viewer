@@ -69,6 +69,16 @@ class PhotoViewer(QMainWindow):
         if image_paths:
             self.swap_to_single_view(PointedList(image_paths))
 
+    ######################
+    # Function Overloads #
+    ######################
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
+        y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
+        self.help_overlay.move(x, y)
+
     ####################
     # Helper Functions #
     ####################
@@ -102,98 +112,3 @@ class PhotoViewer(QMainWindow):
             if len(image_paths) != 0:
                 return image_paths
         return None
-
-    ######################
-    # Function Overloads #
-    ######################
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
-        y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
-        self.help_overlay.move(x, y)
-
-    # def keyPressEvent(self, event):
-    #
-    #     if self.image_paths:
-    #
-    #         if event.key() == Qt.Key.Key_Left:
-    #             self.image_paths.prev()
-    #             self.open_photo()
-    #
-    #         if event.key() == Qt.Key.Key_Right:
-    #             self.image_paths.next()
-    #             self.open_photo()
-    #
-    #         if event.key() == Qt.Key.Key_R:
-    #             self.rotate_image(self.image_paths.current())
-    #             self.open_photo()
-    #
-    #         if event.key() == Qt.Key.Key_L:
-    #             current = self.image_paths.current()
-    #             if current in self.favourites:
-    #                 self.favourites.remove(current)
-    #                 self.star_label.hide()
-    #             else:
-    #                 self.favourites.add(current)
-    #                 self.star_label.show()
-    #             self.open_photo()
-    #
-    #         if event.key() == Qt.Key.Key_D:
-    #             current = self.image_paths.current()
-    #             if current in self.to_delete:
-    #                 self.to_delete.remove(current)
-    #                 self.delete_label.hide()
-    #             else:
-    #                 if not current in self.favourites:
-    #                     self.to_delete.add(current)
-    #                     self.delete_label.show()
-    #             self.open_photo()
-    #
-    #         if event.key() == Qt.Key.Key_W:
-    #             if self.in_wall_view:
-    #                 self.switch_to_single_view()
-    #             else:
-    #                 self.switch_to_wall_view()
-    #
-    # def open_photo(self):
-    #     if self.image_paths:
-    #         current = self.image_paths.current()
-    #         pixmap = QPixmap(current)
-    #         pixmap = pixmap.scaled(
-    #             self.image_label.size(),
-    #             Qt.AspectRatioMode.KeepAspectRatio,
-    #             Qt.TransformationMode.SmoothTransformation,
-    #         )
-    #         if current in self.favourites:
-    #             self.star_label.show()
-    #         else:
-    #             self.star_label.hide()
-    #         self.image_label.setPixmap(pixmap)
-    #
-    # def rotate_image(self, file_path: Path):
-    #     try:
-    #         image = Image.open(file_path)
-    #         image = image.rotate(-90, expand=True)
-    #         image.save(file_path)
-    #     except Exception as e:
-    #         print(f"Error rotating image: {e}")
-    #
-    # def switch_to_single_view(self):
-    #     if self.image_paths:
-    #         self.wall_view.hide()
-    #         self.image_label.show()
-    #         self.in_wall_view = False
-    #         self.open_photo()
-    #         self.setFocus()
-    #
-    # def switch_to_wall_view(self):
-    #     if self.image_paths:
-    #         self.image_label.hide()
-    #         self.star_label.hide()
-    #         self.delete_label.hide()
-    #         self.help_overlay.hide()
-    #
-    #         self.wall_view.setImages(self.image_paths.list)
-    #         self.wall_view.show()
-    #         self.in_wall_view = True

@@ -92,7 +92,7 @@ class PhotoViewer(QMainWindow):
         directory = QFileDialog.getExistingDirectory(
             parent=self,
             caption="Open Image Directory",
-            dir="/Users/audinet/Pictures/Camera/China/Favourites",
+            dir="/Users/audinet/Pictures/Camera/2025 China/Favourites",
         )
         if directory:
             exts = (".png", ".jpg", ".jpeg")

@@ -1,4 +1,4 @@
-from typing import Set
+from typing import Set, Callable
 from PIL import Image
 from pathlib import Path
 
@@ -16,7 +16,12 @@ class SingleView(QWidget):
     MIN_IMAGE_WIDTH: int = 400
     MIN_IMAGE_HEIGHT: int = 400
 
-    def __init__(self, image_paths: PointedList[Path], parent=None):
+    def __init__(
+        self,
+        image_paths: PointedList[Path],
+        swap_to_wall_view: Callable[[PointedList[Path]], None],
+        parent=None,
+    ):
 
         super().__init__(parent)
 
@@ -65,6 +70,11 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
         QShortcut(Qt.Key.Key_L, self, self.action_like)
         QShortcut(Qt.Key.Key_D, self, self.action_delete)
+        QShortcut(
+            Qt.Key.Key_W,
+            self,
+            lambda: swap_to_wall_view(self.image_paths),
+        )
 
     #####################
     # Action Functions  #

@@ -33,7 +33,6 @@ class PhotoViewer(QMainWindow):
         QShortcut(Qt.Key.Key_Q, self, self.action_quit)
         QShortcut(Qt.Key.Key_F, self, self.action_fullscreen)
         QShortcut(Qt.Key.Key_O, self, self.action_open_directory)
-        QShortcut(Qt.Key.Key_W, self, self.action_toggle_wall)
 
         ###########
         # Widgets #
@@ -68,19 +67,11 @@ class PhotoViewer(QMainWindow):
     def action_open_directory(self):
         image_paths = self.choose_directory()
         if image_paths:
-            self.swap_view(SingleView(PointedList(image_paths)))
+            self.swap_to_single_view(PointedList(image_paths))
 
-    def action_toggle_wall(self):
-        view = self.centralWidget()
-        if hasattr(view, "image_paths"):
-            image_paths = view.image_paths  # pyright: ignore
-            if isinstance(view, SingleView):
-                new_view = WallView(image_paths, self.click_callback)
-            elif isinstance(view, WallView):
-                new_view = SingleView(image_paths)
-            else:
-                return
-            self.swap_view(new_view)
+    ####################
+    # Helper Functions #
+    ####################
 
     def swap_view(self, new_view: QWidget):
         old_view = self.takeCentralWidget()
@@ -88,6 +79,14 @@ class PhotoViewer(QMainWindow):
         old_view.deleteLater()
         self.help_overlay.hide()
         self.help_overlay.raise_()
+
+    def swap_to_wall_view(self, image_paths: PointedList[Path]):
+        wall_view = WallView(image_paths, self.swap_to_single_view)
+        self.swap_view(wall_view)
+
+    def swap_to_single_view(self, image_paths: PointedList[Path]):
+        single_view = SingleView(image_paths, self.swap_to_wall_view)
+        self.swap_view(single_view)
 
     def choose_directory(self) -> Optional[List[Path]]:
         directory = QFileDialog.getExistingDirectory(
@@ -113,9 +112,6 @@ class PhotoViewer(QMainWindow):
         x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
         y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
         self.help_overlay.move(x, y)
-
-    def click_callback(self, image_paths: PointedList[Path]):
-        self.swap_view(SingleView(image_paths))
 
     # def keyPressEvent(self, event):
     #

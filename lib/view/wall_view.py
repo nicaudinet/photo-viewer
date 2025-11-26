@@ -2,7 +2,7 @@ from typing import Callable, List
 from pathlib import Path
 
 from PySide6.QtWidgets import QWidget, QLabel, QScrollArea
-from PySide6.QtGui import QPixmap, QMouseEvent
+from PySide6.QtGui import QPixmap, QMouseEvent, QShortcut
 from PySide6.QtCore import Qt
 
 from lib.pointed_list import PointedList
@@ -16,7 +16,7 @@ class Thumbnail(QLabel):
         self,
         file_path: Path,
         index: int,
-        click_callback: Callable,
+        click_callback: Callable[[int], None],
         parent=None,
     ):
 
@@ -45,7 +45,7 @@ class MasonryWall(QWidget):
     def __init__(
         self,
         image_paths: PointedList[Path],
-        click_callback: Callable,
+        swap_to_single_view: Callable[[PointedList[Path]], None],
         parent=None,
     ):
 
@@ -70,12 +70,12 @@ class MasonryWall(QWidget):
         # Init #
         ########
 
-        def callback(index: int):
+        def click_callback(index: int) -> None:
             self.image_paths.goto(index)
-            return click_callback(image_paths)
+            return swap_to_single_view(image_paths)
 
         for i, image_path in enumerate(image_paths):
-            thumbnail = Thumbnail(image_path, i, callback, self)
+            thumbnail = Thumbnail(image_path, i, click_callback, self)
             self.thumbnails.append(thumbnail)
 
         column_width = Thumbnail.THUMBNAIL_WIDTH
@@ -99,14 +99,28 @@ class WallView(QScrollArea):
     def __init__(
         self,
         image_paths: PointedList[Path],
-        click_callback: Callable,
+        swap_to_single_view: Callable[[PointedList[Path]], None],
         parent=None,
     ):
 
         super().__init__(parent)
 
-        self.masonry_wall = MasonryWall(image_paths, click_callback)
+        ###########
+        # Widgets #
+        ###########
+
+        self.masonry_wall = MasonryWall(image_paths, swap_to_single_view)
         self.setWidget(self.masonry_wall)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        #############
+        # Shortcuts #
+        #############
+
+        QShortcut(
+            Qt.Key.Key_W,
+            self,
+            lambda: swap_to_single_view(image_paths),
+        )

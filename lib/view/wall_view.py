@@ -2,7 +2,7 @@ from typing import Callable, List
 from pathlib import Path
 
 from PySide6.QtWidgets import QWidget, QLabel, QScrollArea
-from PySide6.QtGui import QPixmap, QMouseEvent, QShortcut
+from PySide6.QtGui import QPixmap, QMouseEvent, QShortcut, QResizeEvent
 from PySide6.QtCore import Qt
 
 from lib.pointed_list import PointedList
@@ -42,6 +42,8 @@ class Thumbnail(QLabel):
 
 class MasonryWall(QWidget):
 
+    SPACING: int = 10
+
     def __init__(
         self,
         image_paths: PointedList[Path],
@@ -50,14 +52,6 @@ class MasonryWall(QWidget):
     ):
 
         super().__init__(parent)
-
-        ############
-        # Settings #
-        ############
-
-        self.column_count: int = 3
-        self.spacing: int = 10
-        self.thumbnail_width: int = 300
 
         #########
         # State #
@@ -78,15 +72,25 @@ class MasonryWall(QWidget):
             thumbnail = Thumbnail(image_path, i, click_callback, self)
             self.thumbnails.append(thumbnail)
 
+    ######################
+    # Function Overloads #
+    ######################
+
+    def resizeEvent(self, event: QResizeEvent):
+        super().resizeEvent(event)
+
         column_width = Thumbnail.THUMBNAIL_WIDTH
-        column_heights = [self.spacing] * self.column_count
+        item_width = self.SPACING + column_width
+        column_count = (self.width() - self.SPACING) // item_width
+        column_heights = [self.SPACING] * column_count
+        left_padding = (self.width() - column_count * item_width) // 2
 
         for thumbnail in self.thumbnails:
             shortest_column = column_heights.index(min(column_heights))
-            x = self.spacing + shortest_column * (column_width + self.spacing)
+            x = left_padding + self.SPACING + shortest_column * item_width
             y = column_heights[shortest_column]
             thumbnail.move(x, y)
-            column_heights[shortest_column] += thumbnail.height() + self.spacing
+            column_heights[shortest_column] += thumbnail.height() + self.SPACING
 
         for thumbnail in self.thumbnails:
             thumbnail.show()

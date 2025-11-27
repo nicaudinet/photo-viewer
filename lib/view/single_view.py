@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 
 from lib.state import ImageState
 from lib.pointed_list import PointedList
-from lib.photo import Photo
+from lib.photo import LargePhoto
 
 
 class SingleView(QWidget):
@@ -53,11 +53,7 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
         QShortcut(Qt.Key.Key_L, self, self.action_like)
         QShortcut(Qt.Key.Key_D, self, self.action_delete)
-        QShortcut(
-            Qt.Key.Key_W,
-            self,
-            lambda: swap_to_wall_view(self.state),
-        )
+        QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
 
     #####################
     # Action Functions  #
@@ -108,7 +104,7 @@ class SingleView(QWidget):
     def open_photo(self):
         old_photo = self.current_photo
         image_path = self.state.current()
-        self.current_photo = Photo(
+        self.current_photo = LargePhoto(
             image_path=image_path,
             is_favourite=image_path in self.state.favourites,
             to_delete=image_path in self.state.to_delete,

@@ -2,7 +2,7 @@ from typing import Callable, List
 
 from PySide6.QtWidgets import QWidget, QScrollArea
 from PySide6.QtGui import QShortcut, QResizeEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool
 
 from lib.state import ImageState
 from lib.photo import Thumbnail
@@ -27,6 +27,7 @@ class MasonryWall(QWidget):
 
         self.thumbnails: List[Thumbnail] = []
         self.state = state
+        self.threadpool = QThreadPool.globalInstance()
 
         ########
         # Init #
@@ -46,6 +47,7 @@ class MasonryWall(QWidget):
                 parent=self,
             )
             self.thumbnails.append(thumbnail)
+            thumbnail.make_thumbnail_async(self.threadpool)
 
     ######################
     # Function Overloads #

@@ -4,7 +4,39 @@ from PIL import Image
 
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PySide6.QtGui import QIcon, QPixmap, QResizeEvent, QMouseEvent, QImage
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, Signal, Slot, QRunnable, QThreadPool
+
+
+def image_to_pixmap(image: Image.Image) -> QPixmap:
+    if image.mode == "RGB":
+        data = image.tobytes("raw", "RGB")
+        qimage = QImage(
+            data,
+            image.width,
+            image.height,
+            image.width * 3,
+            QImage.Format.Format_RGB888,
+        )
+    elif image.mode == "RGBA":
+        data = image.tobytes("raw", "RGBA")
+        qimage = QImage(
+            data,
+            image.width,
+            image.height,
+            image.width * 3,
+            QImage.Format.Format_RGBA8888,
+        )
+    else:
+        image = image.convert("RGB")
+        data = image.tobytes("raw", "RGB")
+        qimage = QImage(
+            data,
+            image.width,
+            image.height,
+            image.width * 3,
+            QImage.Format.Format_RGB888,
+        )
+    return QPixmap.fromImage(qimage.copy())
 
 
 class Photo(QWidget):
@@ -32,8 +64,12 @@ class Photo(QWidget):
         # Widgets #
         ###########
 
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
         self.image_label = QLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.image_label)
 
         self.star_label = QLabel(self)
         star_icon = QIcon("./icons/star.png")
@@ -42,6 +78,7 @@ class Photo(QWidget):
         self.star_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
         self.star_label.hide()
         self.star_label.raise_()
+        layout.addWidget(self.star_label)
 
         self.delete_label = QLabel(self)
         delete_icon = QIcon("./icons/delete.png")
@@ -50,6 +87,7 @@ class Photo(QWidget):
         self.delete_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
         self.delete_label.hide()
         self.delete_label.raise_()
+        layout.addWidget(self.delete_label)
 
         ########
         # Init #
@@ -63,57 +101,61 @@ class Photo(QWidget):
             self.star_label.hide()
             self.delete_label.hide()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.image_label)
-
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
-
-        width, height = self.image_label.size().toTuple()
-        ratio = min(width / self.image.width, height / self.image.height)
-        size = (int(ratio * self.image.width), int(ratio * self.image.height))
-        resized_image = self.image.resize(
-            size=size,
-            resample=Image.Resampling.BICUBIC,
-        )
-        self.image_label.setPixmap(self.image_to_pixmap(resized_image))
-
         x = self.width() - self.ICON_MARGIN - self.ICON_SIZE
         y = self.ICON_MARGIN
         self.star_label.move(x, y)
         self.delete_label.move(x, y)
 
-    def image_to_pixmap(self, image: Image.Image) -> QPixmap:
-        if image.mode == "RGB":
-            data = image.tobytes("raw", "RGB")
-            qimage = QImage(
-                data,
-                image.width,
-                image.height,
-                image.width * 3,
-                QImage.Format.Format_RGB888,
-            )
-        elif image.mode == "RGBA":
-            data = image.tobytes("raw", "RGBA")
-            qimage = QImage(
-                data,
-                image.width,
-                image.height,
-                image.width * 3,
-                QImage.Format.Format_RGBA8888,
-            )
-        else:
-            image = image.convert("RGB")
-            data = image.tobytes("raw", "RGB")
-            qimage = QImage(
-                data,
-                image.width,
-                image.height,
-                image.width * 3,
-                QImage.Format.Format_RGB888,
-            )
-        return QPixmap.fromImage(qimage.copy())
+
+class LargePhoto(Photo):
+
+    def __init__(
+        self,
+        image_path: Path,
+        is_favourite: bool,
+        to_delete: bool,
+        parent,
+    ):
+
+        super().__init__(
+            image_path=image_path,
+            is_favourite=is_favourite,
+            to_delete=to_delete,
+            parent=parent,
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        width, height = self.image_label.size().toTuple()
+        ratio = min(width / self.image.width, height / self.image.height)
+        resized_width = int(ratio * self.image.width)
+        resized_height = int(ratio * self.image.height)
+        resized_image = self.image.resize(
+            size=(resized_width, resized_height),
+            resample=Image.Resampling.BICUBIC,
+        )
+        self.image_label.setPixmap(image_to_pixmap(resized_image))
+
+
+class ThumbnailSignals(QObject):
+    finished = Signal(QPixmap)
+
+
+class ThumbnailMaker(QRunnable):
+
+    def __init__(self, image: Image.Image, width: int, height: int):
+        super().__init__()
+        self.image = image
+        self.size = (width, height)
+        self.signals = ThumbnailSignals()
+
+    def run(self):
+        resized_image = self.image.copy()
+        resized_image.thumbnail(self.size, Image.Resampling.BILINEAR)
+        pixmap = image_to_pixmap(resized_image)
+        self.signals.finished.emit(pixmap)
 
 
 class Thumbnail(Photo):
@@ -148,21 +190,27 @@ class Thumbnail(Photo):
         # Init #
         ########
 
+        self.image_label.setText("Loading ...")
+
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         aspect_ratio = self.image.height / self.image.width
         thumbnail_height = int(aspect_ratio * self.THUMBNAIL_WIDTH)
-        resized_image = self.image.copy()
-        resized_image.thumbnail(
-            size=(self.THUMBNAIL_WIDTH, thumbnail_height),
-            resample=Image.Resampling.BILINEAR,
-        )
-        self.image_label.setPixmap(self.image_to_pixmap(resized_image))
         self.setFixedSize(self.THUMBNAIL_WIDTH, thumbnail_height)
+
+    def make_thumbnail_async(self, threadpool: QThreadPool):
+        maker = ThumbnailMaker(
+            image=self.image,
+            width=self.width(),
+            height=self.height(),
+        )
+        maker.signals.finished.connect(self.on_thumbnail_made)
+        threadpool.start(maker)
+
+    @Slot(QPixmap)
+    def on_thumbnail_made(self, pixmap: QPixmap):
+        self.image_label.setPixmap(pixmap)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.click_callback(self.index)
-
-    def resizeEvent(self, event):
-        pass

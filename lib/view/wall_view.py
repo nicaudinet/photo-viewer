@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QScrollArea
 from PySide6.QtGui import QPixmap, QMouseEvent, QShortcut, QResizeEvent
 from PySide6.QtCore import Qt
 
-from lib.pointed_list import PointedList
+from lib.state import ImageState
 
 
 class Thumbnail(QLabel):
@@ -46,8 +46,8 @@ class MasonryWall(QWidget):
 
     def __init__(
         self,
-        image_paths: PointedList[Path],
-        swap_to_single_view: Callable[[PointedList[Path]], None],
+        state: ImageState,
+        swap_to_single_view: Callable[[ImageState], None],
         parent=None,
     ):
 
@@ -58,17 +58,17 @@ class MasonryWall(QWidget):
         #########
 
         self.thumbnails: List[Thumbnail] = []
-        self.image_paths: PointedList[Path] = image_paths
+        self.state = state
 
         ########
         # Init #
         ########
 
         def click_callback(index: int) -> None:
-            self.image_paths.goto(index)
-            return swap_to_single_view(image_paths)
+            self.state.goto(index)
+            return swap_to_single_view(self.state)
 
-        for i, image_path in enumerate(image_paths):
+        for i, image_path in enumerate(self.state.image_paths):
             thumbnail = Thumbnail(image_path, i, click_callback, self)
             self.thumbnails.append(thumbnail)
 
@@ -102,8 +102,8 @@ class WallView(QScrollArea):
 
     def __init__(
         self,
-        image_paths: PointedList[Path],
-        swap_to_single_view: Callable[[PointedList[Path]], None],
+        state: ImageState,
+        swap_to_single_view: Callable[[ImageState], None],
         parent=None,
     ):
 
@@ -113,7 +113,7 @@ class WallView(QScrollArea):
         # Widgets #
         ###########
 
-        self.masonry_wall = MasonryWall(image_paths, swap_to_single_view)
+        self.masonry_wall = MasonryWall(state, swap_to_single_view)
         self.setWidget(self.masonry_wall)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -126,5 +126,5 @@ class WallView(QScrollArea):
         QShortcut(
             Qt.Key.Key_W,
             self,
-            lambda: swap_to_single_view(image_paths),
+            lambda: swap_to_single_view(state),
         )

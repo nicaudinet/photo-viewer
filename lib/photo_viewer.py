@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QShortcut
 from PySide6.QtCore import Qt
 
+from lib.state import ImageState
 from lib.pointed_list import PointedList
 from lib.help_overlay import HelpOverlay
 from lib.view.wall_view import WallView
@@ -90,12 +91,12 @@ class PhotoViewer(QMainWindow):
         self.help_overlay.hide()
         self.help_overlay.raise_()
 
-    def swap_to_wall_view(self, image_paths: PointedList[Path]):
-        wall_view = WallView(image_paths, self.swap_to_single_view)
+    def swap_to_wall_view(self, state: ImageState):
+        wall_view = WallView(state, self.swap_to_single_view)
         self.swap_view(wall_view)
 
-    def swap_to_single_view(self, image_paths: PointedList[Path]):
-        single_view = SingleView(image_paths, self.swap_to_wall_view)
+    def swap_to_single_view(self, state: PointedList[Path] | ImageState):
+        single_view = SingleView(state, self.swap_to_wall_view)
         self.swap_view(single_view)
 
     def choose_directory(self) -> Optional[List[Path]]:

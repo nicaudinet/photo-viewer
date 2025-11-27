@@ -1,43 +1,11 @@
 from typing import Callable, List
-from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QLabel, QScrollArea
-from PySide6.QtGui import QPixmap, QMouseEvent, QShortcut, QResizeEvent
+from PySide6.QtWidgets import QWidget, QScrollArea
+from PySide6.QtGui import QShortcut, QResizeEvent
 from PySide6.QtCore import Qt
 
 from lib.state import ImageState
-
-
-class Thumbnail(QLabel):
-
-    THUMBNAIL_WIDTH = 300
-
-    def __init__(
-        self,
-        file_path: Path,
-        index: int,
-        click_callback: Callable[[int], None],
-        parent=None,
-    ):
-
-        super().__init__(parent)
-
-        self.index: int = index
-        self.click_callback: Callable = click_callback
-
-        pixmap = QPixmap(file_path)
-        pixmap = pixmap.scaledToWidth(
-            self.THUMBNAIL_WIDTH,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(pixmap)
-        self.setFixedSize(pixmap.size())
-
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-    def mousePressEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.click_callback(self.index)
+from lib.photo import Thumbnail
 
 
 class MasonryWall(QWidget):
@@ -69,7 +37,14 @@ class MasonryWall(QWidget):
             return swap_to_single_view(self.state)
 
         for i, image_path in enumerate(self.state.image_paths):
-            thumbnail = Thumbnail(image_path, i, click_callback, self)
+            thumbnail = Thumbnail(
+                image_path=image_path,
+                is_favourite=image_path in self.state.favourites,
+                to_delete=image_path in self.state.to_delete,
+                index=i,
+                click_callback=click_callback,
+                parent=self,
+            )
             self.thumbnails.append(thumbnail)
 
     ######################

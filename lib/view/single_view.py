@@ -2,7 +2,7 @@ from typing import Callable
 from PIL import Image
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QShortcut, QResizeEvent
 from PySide6.QtCore import Qt
 
@@ -41,13 +41,7 @@ class SingleView(QWidget):
 
         layout = QVBoxLayout(self)
 
-        image_path = self.state.current()
-        self.current_photo = Photo(
-            image_path=image_path,
-            is_favourite=image_path in self.state.favourites,
-            to_delete=image_path in self.state.to_delete,
-            parent=self,
-        )
+        self.current_photo = QLabel()
         layout.addWidget(self.current_photo)
 
         #############

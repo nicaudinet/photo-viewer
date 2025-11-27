@@ -1,8 +1,9 @@
+from typing import Callable
 from pathlib import Path
 
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
-from PySide6.QtGui import QIcon, QPixmap, QResizeEvent
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap, QResizeEvent, QMouseEvent
+from PySide6.QtCore import Qt, QSize
 
 
 class Photo(QWidget):
@@ -24,18 +25,14 @@ class Photo(QWidget):
         # State #
         #########
 
-        self.image_path = image_path
+        self.pixmap: QPixmap = QPixmap(image_path)
 
         ###########
         # Widgets #
         ###########
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-
         self.image_label = QLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.image_label)
 
         self.star_label = QLabel(self)
         star_icon = QIcon("./icons/star.png")
@@ -65,16 +62,75 @@ class Photo(QWidget):
             self.star_label.hide()
             self.delete_label.hide()
 
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.image_label)
+
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
-        pixmap = QPixmap(self.image_path)
-        pixmap = pixmap.scaled(
+        print("hele")
+        pixmap = self.pixmap.scaled(
             self.image_label.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         self.image_label.setPixmap(pixmap)
+
         x = self.width() - self.ICON_MARGIN - self.ICON_SIZE
         y = self.ICON_MARGIN
         self.star_label.move(x, y)
         self.delete_label.move(x, y)
+
+
+class Thumbnail(Photo):
+
+    THUMBNAIL_WIDTH: int = 300
+
+    def __init__(
+        self,
+        image_path: Path,
+        is_favourite: bool,
+        to_delete: bool,
+        index: int,
+        click_callback: Callable[[int], None],
+        parent,
+    ):
+
+        super().__init__(
+            image_path=image_path,
+            is_favourite=is_favourite,
+            to_delete=to_delete,
+            parent=parent,
+        )
+
+        #########
+        # State #
+        #########
+
+        self.index: int = index
+        self.click_callback: Callable = click_callback
+
+        ########
+        # Init #
+        ########
+
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        aspect_ratio = self.pixmap.height() / self.pixmap.width()
+        thumbnail_height = int(aspect_ratio * self.THUMBNAIL_WIDTH)
+        size = QSize(self.THUMBNAIL_WIDTH, thumbnail_height)
+        pixmap = self.pixmap.scaled(
+            size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        print(pixmap)
+        self.image_label.setPixmap(pixmap)
+        self.setFixedSize(self.THUMBNAIL_WIDTH, thumbnail_height)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.click_callback(self.index)
+
+    def resizeEvent(self, event):
+        pass

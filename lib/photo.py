@@ -58,7 +58,7 @@ class Photo(QWidget):
         # State #
         #########
 
-        self.image: Image.Image = Image.open(image_path)
+        self.image_path: Path = image_path
 
         ###########
         # Widgets #
@@ -125,11 +125,12 @@ class LargePhoto(Photo):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        image = Image.open(self.image_path)
         width, height = self.image_label.size().toTuple()
-        ratio = min(width / self.image.width, height / self.image.height)
-        resized_width = int(ratio * self.image.width)
-        resized_height = int(ratio * self.image.height)
-        resized_image = self.image.resize(
+        ratio = min(width / image.width, height / image.height)
+        resized_width = int(ratio * image.width)
+        resized_height = int(ratio * image.height)
+        resized_image = image.resize(
             size=(resized_width, resized_height),
             resample=Image.Resampling.BICUBIC,
         )
@@ -142,16 +143,16 @@ class ThumbnailSignals(QObject):
 
 class ThumbnailMaker(QRunnable):
 
-    def __init__(self, image: Image.Image, width: int, height: int):
+    def __init__(self, image_path: Path, width: int, height: int):
         super().__init__()
-        self.image = image
+        self.image_path = image_path
         self.size = (width, height)
         self.signals = ThumbnailSignals()
 
     def run(self):
-        resized_image = self.image.copy()
-        resized_image.thumbnail(self.size, Image.Resampling.BILINEAR)
-        pixmap = image_to_pixmap(resized_image)
+        image = Image.open(self.image_path)
+        image.thumbnail(self.size, Image.Resampling.BILINEAR)
+        pixmap = image_to_pixmap(image)
         self.signals.finished.emit(pixmap)
 
 
@@ -191,13 +192,14 @@ class Thumbnail(Photo):
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        aspect_ratio = self.image.height / self.image.width
+        image = Image.open(self.image_path)
+        aspect_ratio = image.height / image.width
         thumbnail_height = int(aspect_ratio * self.THUMBNAIL_WIDTH)
         self.setFixedSize(self.THUMBNAIL_WIDTH, thumbnail_height)
 
     def make_thumbnail_async(self, threadpool: QThreadPool):
         maker = ThumbnailMaker(
-            image=self.image,
+            image_path=self.image_path,
             width=self.width(),
             height=self.height(),
         )

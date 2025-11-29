@@ -40,7 +40,7 @@ class HelpOverlay(QWidget):
             ("←", "Previous image"),
             ("→", "Next image"),
             ("W", "Wall view (toggle)"),
-            ("R", "Rotate image 90° clockwise"),
+            ("R", "Rotate image 90° anti-clockwise"),
             ("L", "Mark as favourite (toggle)"),
             ("D", "Mark to delete (toggle)"),
             ("F", "Fullscreen (toggle)"),

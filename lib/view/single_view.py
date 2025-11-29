@@ -105,7 +105,7 @@ class SingleView(QWidget):
         try:
             image_path = self.state.current()
             image = Image.open(image_path)
-            image = image.rotate(-90, expand=True)
+            image = image.rotate(90, expand=True)
             image.save(image_path)
         except Exception as e:
             print(f"Error rotating image: {e}")

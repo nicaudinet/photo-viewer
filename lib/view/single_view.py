@@ -1,13 +1,11 @@
 from typing import Callable
 from PIL import Image
-from pathlib import Path
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QShortcut, QResizeEvent
 from PySide6.QtCore import Qt
 
 from lib.state import ImageState
-from lib.pointed_list import PointedList
 from lib.photo import LargePhoto
 
 
@@ -15,7 +13,7 @@ class SingleView(QWidget):
 
     def __init__(
         self,
-        init_state: PointedList[Path] | ImageState,
+        init_state: ImageState,
         swap_to_wall_view: Callable[[ImageState], None],
         parent=None,
     ):
@@ -26,14 +24,7 @@ class SingleView(QWidget):
         # State #
         #########
 
-        if isinstance(init_state, ImageState):
-            self.state: ImageState = init_state
-        else:
-            self.state = ImageState(
-                image_paths=init_state,
-                favourites=set(),
-                to_delete=set(),
-            )
+        self.state: ImageState = init_state
 
         ###########
         # Widgets #

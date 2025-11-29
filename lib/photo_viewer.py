@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -9,8 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QShortcut
 from PySide6.QtCore import Qt
 
-from lib.state import ImageState
-from lib.pointed_list import PointedList
+from lib.state import ImageState, load_image_state
 from lib.help_overlay import HelpOverlay
 from lib.view.wall_view import WallView
 from lib.view.single_view import SingleView
@@ -66,9 +65,9 @@ class PhotoViewer(QMainWindow):
             self.help_overlay.show()
 
     def action_open_directory(self):
-        image_paths = self.choose_directory()
-        if image_paths:
-            self.swap_to_single_view(PointedList(image_paths))
+        image_state = self.choose_directory()
+        if image_state:
+            self.swap_to_single_view(image_state)
 
     ######################
     # Function Overloads #
@@ -95,21 +94,14 @@ class PhotoViewer(QMainWindow):
         wall_view = WallView(state, self.swap_to_single_view)
         self.swap_view(wall_view)
 
-    def swap_to_single_view(self, state: PointedList[Path] | ImageState):
+    def swap_to_single_view(self, state: ImageState):
         single_view = SingleView(state, self.swap_to_wall_view)
         self.swap_view(single_view)
 
-    def choose_directory(self) -> Optional[List[Path]]:
-        directory = QFileDialog.getExistingDirectory(
+    def choose_directory(self) -> Optional[ImageState]:
+        image_dir = QFileDialog.getExistingDirectory(
             parent=self,
             caption="Open Image Directory",
             dir="/Users/audinet/Pictures/Camera/2025 China/Favourites",
         )
-        if directory:
-            exts = (".png", ".jpg", ".jpeg")
-            all_files = Path(directory).iterdir()
-            image_paths = [f for f in all_files if f.suffix.lower() in exts]
-            image_paths = sorted(image_paths)
-            if len(image_paths) != 0:
-                return image_paths
-        return None
+        return load_image_state(Path(image_dir))

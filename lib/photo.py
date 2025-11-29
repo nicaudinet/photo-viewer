@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
-from PySide6.QtGui import QIcon, QPixmap, QResizeEvent, QMouseEvent, QImage
+from PySide6.QtGui import QIcon, QPixmap, QMouseEvent, QImage
 from PySide6.QtCore import Qt, QObject, Signal, Slot, QRunnable, QThreadPool
 
 
@@ -78,7 +78,6 @@ class Photo(QWidget):
         self.star_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
         self.star_label.hide()
         self.star_label.raise_()
-        layout.addWidget(self.star_label)
 
         self.delete_label = QLabel(self)
         delete_icon = QIcon("./icons/delete.png")
@@ -87,7 +86,6 @@ class Photo(QWidget):
         self.delete_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
         self.delete_label.hide()
         self.delete_label.raise_()
-        layout.addWidget(self.delete_label)
 
         ########
         # Init #
@@ -101,8 +99,7 @@ class Photo(QWidget):
             self.star_label.hide()
             self.delete_label.hide()
 
-    def resizeEvent(self, event: QResizeEvent):
-        super().resizeEvent(event)
+    def resizeEvent(self, event):
         x = self.width() - self.ICON_MARGIN - self.ICON_SIZE
         y = self.ICON_MARGIN
         self.star_label.move(x, y)

@@ -1,8 +1,8 @@
 from typing import Callable
 from PIL import Image
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtGui import QShortcut, QResizeEvent
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtGui import QShortcut
 from PySide6.QtCore import Qt
 
 from lib.state import ImageState
@@ -32,7 +32,7 @@ class SingleView(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.current_photo = QLabel()
+        self.current_photo: LargePhoto = self.open_photo()
         layout.addWidget(self.current_photo)
 
         #############
@@ -52,15 +52,15 @@ class SingleView(QWidget):
 
     def action_prev(self):
         self.state.prev()
-        self.open_photo()
+        self.replace_photo()
 
     def action_next(self):
         self.state.next()
-        self.open_photo()
+        self.replace_photo()
 
     def action_rotate(self):
         self.rotate_image()
-        self.open_photo()
+        self.replace_photo()
 
     def action_like(self):
         image_path = self.state.current()
@@ -69,7 +69,7 @@ class SingleView(QWidget):
             self.state.restore(image_path)
         else:
             self.state.like(image_path)
-        self.open_photo()
+        self.replace_photo()
 
     def action_delete(self):
         image_path = self.state.current()
@@ -78,29 +78,24 @@ class SingleView(QWidget):
         else:
             if not image_path in self.state.favourites:
                 self.state.delete(image_path)
-        self.open_photo()
-
-    ######################
-    # Function Overloads #
-    ######################
-
-    def resizeEvent(self, event: QResizeEvent):
-        super().resizeEvent(event)
-        self.open_photo()
+        self.replace_photo()
 
     ####################
     # Helper Functions #
     ####################
 
-    def open_photo(self):
-        old_photo = self.current_photo
+    def open_photo(self) -> LargePhoto:
         image_path = self.state.current()
-        self.current_photo = LargePhoto(
+        return LargePhoto(
             image_path=image_path,
             is_favourite=image_path in self.state.favourites,
             to_delete=image_path in self.state.to_delete,
             parent=self,
         )
+
+    def replace_photo(self) -> None:
+        old_photo = self.current_photo
+        self.current_photo = self.open_photo()
         layout = self.layout()
         if layout:
             layout.replaceWidget(old_photo, self.current_photo)

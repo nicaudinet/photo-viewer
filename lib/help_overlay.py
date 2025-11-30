@@ -15,7 +15,6 @@ class HelpOverlay(QWidget):
         super().__init__(parent)
 
         self.setMinimumWidth(300)
-
         self.setAutoFillBackground(True)
 
         layout = QVBoxLayout(self)

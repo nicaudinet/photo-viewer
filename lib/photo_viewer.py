@@ -38,12 +38,13 @@ class PhotoViewer(QMainWindow):
         # Widgets #
         ###########
 
-        self.help_overlay = HelpOverlay(self)
+        central_widget = EmptyView(self)
+        self.setCentralWidget(central_widget)
+
+        self.help_overlay = HelpOverlay(central_widget)
         self.help_overlay.adjustSize()  # Has 0 size otherwise
         self.help_overlay.hide()
         self.help_overlay.raise_()
-
-        self.setCentralWidget(EmptyView(self))
 
     ###########
     # Actions #
@@ -87,6 +88,7 @@ class PhotoViewer(QMainWindow):
         old_view = self.takeCentralWidget()
         self.setCentralWidget(new_view)
         old_view.deleteLater()
+        self.help_overlay.setParent(new_view)
         self.help_overlay.hide()
         self.help_overlay.raise_()
 

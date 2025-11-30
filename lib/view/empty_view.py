@@ -11,6 +11,8 @@ class EmptyView(QWidget):
 
         super().__init__(parent)
 
+        self.setAutoFillBackground(True)
+
         layout = QVBoxLayout(self)
 
         self.empty_image = QLabel("No image loaded\nPress ? for help!")

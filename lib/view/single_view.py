@@ -1,12 +1,57 @@
 from typing import Callable
 from PIL import Image
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtGui import QShortcut
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QDialog,
+    QPushButton,
+    QLabel,
+)
+from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtCore import Qt
 
 from lib.state import ImageState
 from lib.photo import LargePhoto
+
+
+class DeleteConfirmDialog(QDialog):
+
+    def __init__(self, count: int, parent=None):
+
+        super().__init__(parent)
+
+        self.setWindowTitle("Confirm Deletion")
+        self.setModal(True)
+        window_flag = Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
+        self.setWindowFlags(window_flag)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        if count == 1:
+            message = "Are you sure you want to delete 1 photo?"
+        else:
+            message = f"Are you sure you want to delete {count} photos?"
+        message = QLabel(message)
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message)
+
+        button_layout = QHBoxLayout()
+
+        yes_button = QPushButton("Yes")
+        yes_button.clicked.connect(self.accept)
+        button_layout.addWidget(yes_button)
+
+        no_button = QPushButton("No")
+        no_button.clicked.connect(self.reject)
+        no_button.setFocus()
+        button_layout.addWidget(no_button)
+
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
 
 
 class SingleView(QWidget):
@@ -43,7 +88,8 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_Right, self, self.action_next)
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
         QShortcut(Qt.Key.Key_F, self, self.action_favourite)
-        QShortcut(Qt.Key.Key_D, self, self.action_delete)
+        QShortcut(QKeySequence("D"), self, self.action_delete)
+        QShortcut(QKeySequence("Shift+D"), self, self.action_delete_all)
         QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
 
     #####################
@@ -79,6 +125,16 @@ class SingleView(QWidget):
             if not image_path in self.state.favourites:
                 self.state.delete(image_path)
         self.replace_photo()
+
+    def action_delete_all(self):
+        to_delete_count = len(self.state.to_delete)
+        if to_delete_count == 0:
+            return
+        dialog = DeleteConfirmDialog(to_delete_count, self)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            self.state.delete_all()
+            self.replace_photo()
 
     ####################
     # Helper Functions #

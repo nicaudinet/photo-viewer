@@ -49,6 +49,17 @@ class ImageState:
             self.to_delete.remove(image_path)
             self.save()
 
+    def delete_all(self):
+        while self.to_delete:
+            image_path = self.current()
+            if image_path in self.to_delete:
+                image_path.unlink(missing_ok=True)
+                self.image_paths.delete()
+                self.to_delete.remove(image_path)
+            else:
+                self.next()
+        self.save()
+
     def save(self) -> None:
         self.cache_dir.mkdir(exist_ok=True, parents=True)
         with self.favourites_file.open("w") as file:

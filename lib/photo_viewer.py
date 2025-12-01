@@ -31,7 +31,7 @@ class PhotoViewer(QMainWindow):
 
         QShortcut(Qt.Key.Key_Question, self, self.action_toggle_help)
         QShortcut(Qt.Key.Key_Q, self, self.action_quit)
-        QShortcut(Qt.Key.Key_F, self, self.action_fullscreen)
+        QShortcut(Qt.Key.Key_E, self, self.action_fullscreen)
         QShortcut(Qt.Key.Key_O, self, self.action_open_directory)
 
         ###########

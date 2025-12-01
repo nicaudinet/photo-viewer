@@ -42,7 +42,7 @@ class HelpOverlay(QWidget):
             ("R", "Rotate image 90° anti-clockwise"),
             ("L", "Mark as favourite (toggle)"),
             ("D", "Mark to delete (toggle)"),
-            ("F", "Fullscreen (toggle)"),
+            ("E", "Fullscreen (toggle)"),
             ("?", "Show this help (toggle)"),
             ("Q", "Quit application"),
         ]

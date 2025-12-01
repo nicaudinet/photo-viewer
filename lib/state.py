@@ -29,12 +29,12 @@ class ImageState:
     def goto(self, index: int) -> None:
         self.image_paths.goto(index)
 
-    def like(self, image_path: Path) -> None:
+    def favourite(self, image_path: Path) -> None:
         assert image_path in self.image_paths
         self.favourites.add(image_path)
         self.save()
 
-    def dislike(self, image_path: Path) -> None:
+    def unfavourite(self, image_path: Path) -> None:
         if image_path in self.favourites:
             self.favourites.remove(image_path)
             self.save()
@@ -44,7 +44,7 @@ class ImageState:
         self.to_delete.add(image_path)
         self.save()
 
-    def restore(self, image_path: Path) -> None:
+    def undelete(self, image_path: Path) -> None:
         if image_path in self.to_delete:
             self.to_delete.remove(image_path)
             self.save()

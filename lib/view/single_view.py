@@ -42,7 +42,7 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_Left, self, self.action_prev)
         QShortcut(Qt.Key.Key_Right, self, self.action_next)
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
-        QShortcut(Qt.Key.Key_L, self, self.action_like)
+        QShortcut(Qt.Key.Key_F, self, self.action_favourite)
         QShortcut(Qt.Key.Key_D, self, self.action_delete)
         QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
 
@@ -62,19 +62,19 @@ class SingleView(QWidget):
         self.rotate_image()
         self.replace_photo()
 
-    def action_like(self):
+    def action_favourite(self):
         image_path = self.state.current()
         if image_path in self.state.favourites:
-            self.state.dislike(image_path)
-            self.state.restore(image_path)
+            self.state.unfavourite(image_path)
+            self.state.undelete(image_path)
         else:
-            self.state.like(image_path)
+            self.state.favourite(image_path)
         self.replace_photo()
 
     def action_delete(self):
         image_path = self.state.current()
         if image_path in self.state.to_delete:
-            self.state.restore(image_path)
+            self.state.undelete(image_path)
         else:
             if not image_path in self.state.favourites:
                 self.state.delete(image_path)

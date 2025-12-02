@@ -89,7 +89,7 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
         QShortcut(Qt.Key.Key_F, self, self.action_favourite)
         QShortcut(QKeySequence("D"), self, self.action_delete)
-        QShortcut(QKeySequence("Shift+D"), self, self.action_delete_all)
+        QShortcut(QKeySequence("Ctrl+D"), self, self.action_delete_all)
         QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
 
     #####################
@@ -127,10 +127,8 @@ class SingleView(QWidget):
         self.replace_photo()
 
     def action_delete_all(self):
-        to_delete_count = len(self.state.to_delete)
-        if to_delete_count == 0:
-            return
-        dialog = DeleteConfirmDialog(to_delete_count, self)
+        count = len(self.state.to_delete)
+        dialog = DeleteConfirmDialog(count, self)
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             self.state.delete_all()

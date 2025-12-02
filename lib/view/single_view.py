@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Callable
 from PIL import Image
 
@@ -8,6 +9,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QPushButton,
     QLabel,
+    QFileDialog,
 )
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtCore import Qt
@@ -87,7 +89,8 @@ class SingleView(QWidget):
         QShortcut(Qt.Key.Key_Left, self, self.action_prev)
         QShortcut(Qt.Key.Key_Right, self, self.action_next)
         QShortcut(Qt.Key.Key_R, self, self.action_rotate)
-        QShortcut(Qt.Key.Key_F, self, self.action_favourite)
+        QShortcut(QKeySequence("F"), self, self.action_favourite)
+        QShortcut(QKeySequence("Ctrl+F"), self, self.action_favourite_save)
         QShortcut(QKeySequence("D"), self, self.action_delete)
         QShortcut(QKeySequence("Ctrl+D"), self, self.action_delete_all)
         QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
@@ -133,6 +136,14 @@ class SingleView(QWidget):
         if result == QDialog.DialogCode.Accepted:
             self.state.delete_all()
             self.replace_photo()
+
+    def action_favourite_save(self):
+        favourites_dir = QFileDialog.getExistingDirectory(
+            parent=self,
+            caption="Create or select directory to save favourites",
+            dir="/Users/audinet/Pictures/Camera/2025 China/Favourites",
+        )
+        self.state.save_favourites(Path(favourites_dir))
 
     ####################
     # Helper Functions #

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Set, Optional
 from pathlib import Path
+import shutil
 
 from lib.pointed_list import PointedList
 
@@ -68,6 +69,14 @@ class ImageState:
         with self.to_delete_file.open("w") as file:
             lines = [str(d) for d in self.to_delete]
             file.writelines("\n".join(lines))
+
+    def save_favourites(self, new_dir: Path) -> None:
+        for favourite in self.favourites:
+            destination = new_dir / favourite.name
+            if destination.exists():
+                print(f"Destination {destination} already exists, skipping.")
+            else:
+                shutil.copy2(favourite, destination)
 
 
 def load_image_state(image_dir: Path) -> Optional[ImageState]:

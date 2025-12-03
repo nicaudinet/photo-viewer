@@ -89,7 +89,7 @@ def load_image_state(image_dir: Path) -> Optional[ImageState]:
     all_files = Path(image_dir).iterdir()
     image_paths = [f for f in all_files if f.suffix.lower() in exts]
     if len(image_paths) == 0:
-        raise ValueError
+        return
     image_paths = sorted(image_paths)
 
     favourites = set()

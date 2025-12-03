@@ -15,8 +15,8 @@ class EmptyView(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.empty_image = QLabel("No image loaded\nPress ? for help!")
-        self.empty_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_image.setStyleSheet("border: 2px dashed #aaa;")
-        self.empty_image.setMinimumSize(400, 400)
-        layout.addWidget(self.empty_image)
+        self.empty_label = QLabel("No image loaded\nPress ? for help!")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setStyleSheet("border: 2px dashed #aaa;")
+        self.empty_label.setMinimumSize(400, 400)
+        layout.addWidget(self.empty_label)

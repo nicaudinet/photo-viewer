@@ -106,4 +106,5 @@ class PhotoViewer(QMainWindow):
             caption="Open Image Directory",
             dir="/Users/audinet/Pictures/Camera/2025 China/Favourites",
         )
-        return load_image_state(Path(image_dir))
+        if not image_dir == "":
+            return load_image_state(Path(image_dir))

@@ -1,7 +1,7 @@
 from typing import Callable, List
 
 from PySide6.QtWidgets import QWidget, QScrollArea
-from PySide6.QtGui import QShortcut, QResizeEvent
+from PySide6.QtGui import QShortcut, QResizeEvent, QKeySequence
 from PySide6.QtCore import Qt, QThreadPool
 
 from lib.state import ImageState
@@ -10,7 +10,7 @@ from lib.photo import Thumbnail
 
 class MasonryWall(QWidget):
 
-    SPACING: int = 10
+    SPACING: int = 20
 
     def __init__(
         self,
@@ -28,6 +28,7 @@ class MasonryWall(QWidget):
         self.thumbnails: List[Thumbnail] = []
         self.state = state
         self.threadpool = QThreadPool.globalInstance()
+        self.show_only_favourites = False
 
         ########
         # Init #
@@ -55,6 +56,25 @@ class MasonryWall(QWidget):
 
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
+        min_height = self.build_wall()
+        self.setMinimumHeight(min_height)
+
+    ####################
+    # Helper Functions #
+    ####################
+
+    def build_wall(self) -> int:
+
+        for thumbnail in self.thumbnails:
+            if thumbnail.is_favourite:
+                thumbnail.show_favourite()
+            thumbnail.hide()
+
+        thumbnails = self.thumbnails
+        if self.show_only_favourites:
+            thumbnails = [t for t in thumbnails if t.is_favourite]
+            for thumbnail in thumbnails:
+                thumbnail.hide_favourite()
 
         column_width = Thumbnail.THUMBNAIL_WIDTH
         item_width = self.SPACING + column_width
@@ -62,17 +82,22 @@ class MasonryWall(QWidget):
         column_heights = [self.SPACING] * column_count
         left_padding = (self.width() - column_count * item_width) // 2
 
-        for thumbnail in self.thumbnails:
+        for thumbnail in thumbnails:
             shortest_column = column_heights.index(min(column_heights))
             x = left_padding + self.SPACING + shortest_column * item_width
             y = column_heights[shortest_column]
             thumbnail.move(x, y)
             column_heights[shortest_column] += thumbnail.height() + self.SPACING
 
-        for thumbnail in self.thumbnails:
+        for thumbnail in thumbnails:
             thumbnail.show()
 
-        self.setMinimumHeight(max(column_heights))
+        return max(column_heights)
+
+    def toggle_only_favourites(self):
+        print("Show only favourites")
+        self.show_only_favourites = not self.show_only_favourites
+        self.build_wall()
 
 
 class WallView(QScrollArea):
@@ -100,8 +125,8 @@ class WallView(QScrollArea):
         # Shortcuts #
         #############
 
-        QShortcut(
-            Qt.Key.Key_W,
-            self,
-            lambda: swap_to_single_view(state),
-        )
+        QShortcut(Qt.Key.Key_W, self, lambda: swap_to_single_view(state))
+        QShortcut(QKeySequence("Shift+F"), self, self.toggle_only_favourites)
+
+    def toggle_only_favourites(self):
+        self.masonry_wall.toggle_only_favourites()

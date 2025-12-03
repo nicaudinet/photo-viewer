@@ -29,6 +29,7 @@ class MasonryWall(QWidget):
         self.state = state
         self.threadpool = QThreadPool.globalInstance()
         self.show_only_favourites = False
+        self.show_only_to_delete = False
 
         ########
         # Init #
@@ -68,6 +69,8 @@ class MasonryWall(QWidget):
         for thumbnail in self.thumbnails:
             if thumbnail.is_favourite:
                 thumbnail.show_favourite()
+            if thumbnail.to_delete:
+                thumbnail.show_to_delete()
             thumbnail.hide()
 
         thumbnails = self.thumbnails
@@ -75,6 +78,10 @@ class MasonryWall(QWidget):
             thumbnails = [t for t in thumbnails if t.is_favourite]
             for thumbnail in thumbnails:
                 thumbnail.hide_favourite()
+        elif self.show_only_to_delete:
+            thumbnails = [t for t in thumbnails if t.to_delete]
+            for thumbnail in thumbnails:
+                thumbnail.hide_to_delete()
 
         column_width = Thumbnail.THUMBNAIL_WIDTH
         item_width = self.SPACING + column_width
@@ -95,8 +102,11 @@ class MasonryWall(QWidget):
         return max(column_heights)
 
     def toggle_only_favourites(self):
-        print("Show only favourites")
         self.show_only_favourites = not self.show_only_favourites
+        self.build_wall()
+
+    def toggle_only_to_delete(self):
+        self.show_only_to_delete = not self.show_only_to_delete
         self.build_wall()
 
 
@@ -127,6 +137,10 @@ class WallView(QScrollArea):
 
         QShortcut(Qt.Key.Key_W, self, lambda: swap_to_single_view(state))
         QShortcut(QKeySequence("Shift+F"), self, self.toggle_only_favourites)
+        QShortcut(QKeySequence("Shift+D"), self, self.toggle_only_to_delete)
 
     def toggle_only_favourites(self):
         self.masonry_wall.toggle_only_favourites()
+
+    def toggle_only_to_delete(self):
+        self.masonry_wall.toggle_only_to_delete()

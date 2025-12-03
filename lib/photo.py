@@ -59,6 +59,8 @@ class Photo(QWidget):
         #########
 
         self.image_path: Path = image_path
+        self.is_favourite = is_favourite
+        self.to_delete = to_delete
 
         ###########
         # Widgets #
@@ -104,6 +106,18 @@ class Photo(QWidget):
         y = self.ICON_MARGIN
         self.star_label.move(x, y)
         self.delete_label.move(x, y)
+
+    def show_favourite(self):
+        self.star_label.show()
+
+    def hide_favourite(self):
+        self.star_label.hide()
+
+    def show_to_delete(self):
+        self.delete_label.show()
+
+    def hide_to_delete(self):
+        self.delete_label.hide()
 
 
 class LargePhoto(Photo):

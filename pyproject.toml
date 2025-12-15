@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
     "pyside6==6.10.1",
     "pillow==12.0.0",
+    "pyobjc-framework-Cocoa",
 ]
 
 [tool.setuptools.packages.find]

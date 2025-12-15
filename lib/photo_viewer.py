@@ -47,16 +47,7 @@ class PhotoViewer(QMainWindow):
         self.help_overlay.raise_()
 
         if filepath:
-            if filepath.is_file():
-                filedir = filepath.parent
-                image_state = load_image_state(filedir)
-                assert not image_state == None
-            else:
-                image_state = load_image_state(filepath)
-                if image_state == None:
-                    raise ValueError(f"Directory {filepath} is empty")
-                image_state.image_paths.goto_value(filepath)
-            self.swap_to_single_view(image_state)
+            self.load_path(filepath)
 
     ###########
     # Actions #
@@ -120,3 +111,15 @@ class PhotoViewer(QMainWindow):
         )
         if not image_dir == "":
             return load_image_state(Path(image_dir))
+
+    def load_path(self, path: Path) -> None:
+        if path.is_file():
+            filedir = path.parent
+            image_state = load_image_state(filedir)
+            assert not image_state == None
+            image_state.image_paths.goto_value(path)
+        else:
+            image_state = load_image_state(path)
+            if image_state == None:
+                raise ValueError(f"Directory {path} is empty")
+        self.swap_to_single_view(image_state)

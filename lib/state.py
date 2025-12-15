@@ -81,6 +81,12 @@ class ImageState:
 
 def load_image_state(image_dir: Path) -> Optional[ImageState]:
 
+    if not image_dir.exists():
+        raise ValueError(f"Directory {image_dir} does not exist")
+
+    if not image_dir.is_dir():
+        raise ValueError(f"{image_dir} is not a directory")
+
     cache_dir = image_dir / ".photo-viewer"
     favourites_file = cache_dir / "favourites"
     to_delete_file = cache_dir / "to_delete"

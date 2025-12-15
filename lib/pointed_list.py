@@ -31,6 +31,11 @@ class PointedList(Generic[T]):
         assert 0 <= index < len(self.list), "Index is not in the list"
         self.index = index
 
+    def goto_value(self, path: T) -> None:
+        if path in self.list:
+            index = self.list.index(path)
+            self.goto(index)
+
     def delete(self) -> T:
         self.list.pop(self.index)
         self.index = self.index % len(self.list)

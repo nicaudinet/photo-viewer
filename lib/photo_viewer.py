@@ -18,7 +18,7 @@ from lib.view.empty_view import EmptyView
 
 class PhotoViewer(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, filepath: Optional[Path]):
 
         super().__init__()
 
@@ -45,6 +45,18 @@ class PhotoViewer(QMainWindow):
         self.help_overlay.adjustSize()  # Has 0 size otherwise
         self.help_overlay.hide()
         self.help_overlay.raise_()
+
+        if filepath:
+            if filepath.is_file():
+                filedir = filepath.parent
+                image_state = load_image_state(filedir)
+                assert not image_state == None
+            else:
+                image_state = load_image_state(filepath)
+                if image_state == None:
+                    raise ValueError(f"Directory {filepath} is empty")
+                image_state.image_paths.goto_value(filepath)
+            self.swap_to_single_view(image_state)
 
     ###########
     # Actions #

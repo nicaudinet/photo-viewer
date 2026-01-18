@@ -3,3 +3,6 @@ lib/photo_viewer.egg-info
 lib/view/__pycache__
 build
 dist
+venv
+main.linux.spec
+main.spec

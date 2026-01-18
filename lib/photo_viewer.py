@@ -67,6 +67,7 @@ class PhotoViewer(QMainWindow):
             self.help_overlay.hide()
         else:
             self.help_overlay.show()
+            self.help_overlay.raise_()
 
     def action_open_directory(self):
         image_state = self.choose_directory()

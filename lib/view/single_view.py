@@ -86,14 +86,14 @@ class SingleView(QWidget):
         # Shortcuts #
         #############
 
-        QShortcut(Qt.Key.Key_Left, self, self.action_prev)
-        QShortcut(Qt.Key.Key_Right, self, self.action_next)
-        QShortcut(Qt.Key.Key_R, self, self.action_rotate)
+        QShortcut(QKeySequence("Left"), self, self.action_prev)
+        QShortcut(QKeySequence("Right"), self, self.action_next)
+        QShortcut(QKeySequence("R"), self, self.action_rotate)
         QShortcut(QKeySequence("F"), self, self.action_favourite)
         QShortcut(QKeySequence("Ctrl+F"), self, self.action_favourite_save)
         QShortcut(QKeySequence("D"), self, self.action_delete)
         QShortcut(QKeySequence("Ctrl+D"), self, self.action_delete_all)
-        QShortcut(Qt.Key.Key_W, self, lambda: swap_to_wall_view(self.state))
+        QShortcut(QKeySequence("W"), self, lambda: swap_to_wall_view(self.state))
 
     #####################
     # Action Functions  #

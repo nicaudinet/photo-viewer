@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QFileDialog,
 )
-from PySide6.QtGui import QShortcut
+from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtCore import Qt
 
 from lib.state import ImageState, load_image_state
@@ -29,10 +29,10 @@ class PhotoViewer(QMainWindow):
         # Shortcuts #
         #############
 
-        QShortcut(Qt.Key.Key_Question, self, self.action_toggle_help)
-        QShortcut(Qt.Key.Key_Q, self, self.action_quit)
-        QShortcut(Qt.Key.Key_E, self, self.action_fullscreen)
-        QShortcut(Qt.Key.Key_O, self, self.action_open_directory)
+        QShortcut(QKeySequence("?"), self, self.action_toggle_help)
+        QShortcut(QKeySequence("Q"), self, self.action_quit)
+        QShortcut(QKeySequence("E"), self, self.action_fullscreen)
+        QShortcut(QKeySequence("O"), self, self.action_open_directory)
 
         ###########
         # Widgets #

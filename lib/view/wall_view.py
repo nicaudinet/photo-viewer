@@ -135,7 +135,7 @@ class WallView(QScrollArea):
         # Shortcuts #
         #############
 
-        QShortcut(Qt.Key.Key_W, self, lambda: swap_to_single_view(state))
+        QShortcut(QKeySequence("W"), self, lambda: swap_to_single_view(state))
         QShortcut(QKeySequence("Shift+F"), self, self.toggle_only_favourites)
         QShortcut(QKeySequence("Shift+D"), self, self.toggle_only_to_delete)
 

@@ -23,7 +23,7 @@ def image_to_pixmap(image: Image.Image) -> QPixmap:
             data,
             image.width,
             image.height,
-            image.width * 3,
+            image.width * 4,
             QImage.Format.Format_RGBA8888,
         )
     else:

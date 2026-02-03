@@ -6,3 +6,4 @@ dist
 venv
 main.linux.spec
 main.spec
+tests/__pycache__

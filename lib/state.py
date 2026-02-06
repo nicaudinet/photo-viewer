@@ -5,6 +5,8 @@ import shutil
 
 from lib.pointed_list import PointedList
 
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
 
 @dataclass(frozen=True)
 class ImageState:
@@ -91,9 +93,8 @@ def load_image_state(image_dir: Path) -> Optional[ImageState]:
     favourites_file = cache_dir / "favourites"
     to_delete_file = cache_dir / "to_delete"
 
-    exts = (".png", ".jpg", ".jpeg")
     all_files = Path(image_dir).iterdir()
-    image_paths = [f for f in all_files if f.suffix.lower() in exts]
+    image_paths = [f for f in all_files if f.suffix.lower() in IMAGE_EXTENSIONS]
     if len(image_paths) == 0:
         return
     image_paths = sorted(image_paths)

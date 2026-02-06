@@ -4,136 +4,103 @@ from unittest.mock import patch
 
 from lib.state import ImageState, load_image_state, IMAGE_EXTENSIONS
 from lib.pointed_list import PointedList
-
-
-@pytest.fixture
-def tmp_image_dir(tmp_path):
-    image_dir = tmp_path / "images"
-    image_dir.mkdir()
-    return image_dir
-
-
-@pytest.fixture
-def fake_images(tmp_image_dir):
-    images = []
-    names = [f"{i}.{ext}" for i, ext in enumerate(IMAGE_EXTENSIONS)]
-    for name in names:
-        img = tmp_image_dir / name
-        img.write_text("fake image data")
-        images.append(img)
-    return sorted(images)
-
-
-@pytest.fixture
-def image_state(tmp_image_dir, fake_images):
-    cache_dir = tmp_image_dir / ".photo-viewer"
-    return ImageState(
-        image_paths=PointedList(fake_images),
-        favourites=set(),
-        to_delete=set(),
-        image_dir=tmp_image_dir,
-        cache_dir=cache_dir,
-        favourites_file=cache_dir / "favourites",
-        to_delete_file=cache_dir / "to_delete",
-    )
+from tests.fixtures import tmp_image_dir, tmp_images, image_state
 
 
 class TestNavigation:
-    def test_current_returns_first_image(self, image_state, fake_images):
-        assert image_state.current() == fake_images[0]
+    def test_current_returns_first_image(self, image_state, tmp_images):
+        assert image_state.current() == tmp_images[0]
 
-    def test_next_moves_forward(self, image_state, fake_images):
+    def test_next_moves_forward(self, image_state, tmp_images):
         image_state.next()
-        assert image_state.current() == fake_images[1]
+        assert image_state.current() == tmp_images[1]
 
-    def test_prev_moves_backward(self, image_state, fake_images):
+    def test_prev_moves_backward(self, image_state, tmp_images):
         image_state.next()
         image_state.next()
         image_state.prev()
-        assert image_state.current() == fake_images[1]
+        assert image_state.current() == tmp_images[1]
 
-    def test_goto_jumps_to_index(self, image_state, fake_images):
+    def test_goto_jumps_to_index(self, image_state, tmp_images):
         image_state.goto(2)
-        assert image_state.current() == fake_images[2]
+        assert image_state.current() == tmp_images[2]
 
 
 class TestFavourites:
-    def test_favourite_adds_to_set(self, image_state, fake_images):
-        image_state.favourite(fake_images[0])
-        assert fake_images[0] in image_state.favourites
+    def test_favourite_adds_to_set(self, image_state, tmp_images):
+        image_state.favourite(tmp_images[0])
+        assert tmp_images[0] in image_state.favourites
 
-    def test_favourite_persists_to_file(self, image_state, fake_images):
-        image_state.favourite(fake_images[0])
+    def test_favourite_persists_to_file(self, image_state, tmp_images):
+        image_state.favourite(tmp_images[0])
         assert image_state.favourites_file.exists()
         content = image_state.favourites_file.read_text()
-        assert str(fake_images[0]) in content
+        assert str(tmp_images[0]) in content
 
     def test_favourite_asserts_invalid_path(self, image_state, tmp_path):
         invalid_path = tmp_path / "nonexistent.png"
         with pytest.raises(AssertionError):
             image_state.favourite(invalid_path)
 
-    def test_unfavourite_removes_from_set(self, image_state, fake_images):
-        image_state.favourite(fake_images[0])
-        image_state.unfavourite(fake_images[0])
-        assert fake_images[0] not in image_state.favourites
+    def test_unfavourite_removes_from_set(self, image_state, tmp_images):
+        image_state.favourite(tmp_images[0])
+        image_state.unfavourite(tmp_images[0])
+        assert tmp_images[0] not in image_state.favourites
 
-    def test_unfavourite_noop_if_not_favourite(self, image_state, fake_images):
-        image_state.unfavourite(fake_images[0])
-        assert fake_images[0] not in image_state.favourites
+    def test_unfavourite_noop_if_not_favourite(self, image_state, tmp_images):
+        image_state.unfavourite(tmp_images[0])
+        assert tmp_images[0] not in image_state.favourites
 
 
 class TestDelete:
-    def test_delete_adds_to_set(self, image_state, fake_images):
-        image_state.delete(fake_images[0])
-        assert fake_images[0] in image_state.to_delete
+    def test_delete_adds_to_set(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
+        assert tmp_images[0] in image_state.to_delete
 
-    def test_delete_persists_to_file(self, image_state, fake_images):
-        image_state.delete(fake_images[0])
+    def test_delete_persists_to_file(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
         assert image_state.to_delete_file.exists()
         content = image_state.to_delete_file.read_text()
-        assert str(fake_images[0]) in content
+        assert str(tmp_images[0]) in content
 
     def test_delete_asserts_invalid_path(self, image_state, tmp_path):
         invalid_path = tmp_path / "nonexistent.png"
         with pytest.raises(AssertionError):
             image_state.delete(invalid_path)
 
-    def test_undelete_removes_from_set(self, image_state, fake_images):
-        image_state.delete(fake_images[0])
-        image_state.undelete(fake_images[0])
-        assert fake_images[0] not in image_state.to_delete
+    def test_undelete_removes_from_set(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
+        image_state.undelete(tmp_images[0])
+        assert tmp_images[0] not in image_state.to_delete
 
-    def test_undelete_noop_if_not_marked(self, image_state, fake_images):
-        image_state.undelete(fake_images[0])
-        assert fake_images[0] not in image_state.to_delete
+    def test_undelete_noop_if_not_marked(self, image_state, tmp_images):
+        image_state.undelete(tmp_images[0])
+        assert tmp_images[0] not in image_state.to_delete
 
 
 class TestDeleteAll:
-    def test_delete_all_removes_files_from_disk(self, image_state, fake_images):
-        image_state.delete(fake_images[0])
-        image_state.delete(fake_images[1])
+    def test_delete_all_removes_files_from_disk(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
+        image_state.delete(tmp_images[1])
         image_state.delete_all()
-        assert not fake_images[0].exists()
-        assert not fake_images[1].exists()
-        assert fake_images[2].exists()
+        assert not tmp_images[0].exists()
+        assert not tmp_images[1].exists()
+        assert tmp_images[2].exists()
 
-    def test_delete_all_removes_from_image_paths(
-        self, image_state, fake_images
-    ):
-        image_state.delete(fake_images[0])
+    def test_delete_all_removes_from_image_paths(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
         image_state.delete_all()
-        assert fake_images[0] not in image_state.image_paths
+        assert tmp_images[0] not in image_state.image_paths
 
-    def test_delete_all_clears_to_delete_set(self, image_state, fake_images):
-        image_state.delete(fake_images[0])
-        image_state.delete(fake_images[1])
+    def test_delete_all_clears_to_delete_set(self, image_state, tmp_images):
+        image_state.delete(tmp_images[0])
+        image_state.delete(tmp_images[1])
         image_state.delete_all()
         assert len(image_state.to_delete) == 0
 
-    def test_delete_all_noop_when_empty(self, image_state, fake_images):
+    def test_delete_all_noop_when_empty(self, image_state, tmp_images):
         image_state.delete_all()
-        assert all(img.exists() for img in fake_images)
+        assert all(img.exists() for img in tmp_images)
         assert len(list(image_state.image_paths)) == 3
 
 
@@ -143,19 +110,19 @@ class TestSave:
         image_state.save()
         assert image_state.cache_dir.exists()
 
-    def test_save_writes_favourites_file(self, image_state, fake_images):
-        image_state.favourites.add(fake_images[0])
-        image_state.favourites.add(fake_images[1])
+    def test_save_writes_favourites_file(self, image_state, tmp_images):
+        image_state.favourites.add(tmp_images[0])
+        image_state.favourites.add(tmp_images[1])
         image_state.save()
         content = image_state.favourites_file.read_text()
-        assert str(fake_images[0]) in content
-        assert str(fake_images[1]) in content
+        assert str(tmp_images[0]) in content
+        assert str(tmp_images[1]) in content
 
-    def test_save_writes_to_delete_file(self, image_state, fake_images):
-        image_state.to_delete.add(fake_images[0])
+    def test_save_writes_to_delete_file(self, image_state, tmp_images):
+        image_state.to_delete.add(tmp_images[0])
         image_state.save()
         content = image_state.to_delete_file.read_text()
-        assert str(fake_images[0]) in content
+        assert str(tmp_images[0]) in content
 
     def test_save_handles_empty_sets(self, image_state):
         image_state.save()
@@ -165,24 +132,24 @@ class TestSave:
 
 class TestSaveFavourites:
     def test_save_favourites_copies_to_destination(
-        self, image_state, fake_images, tmp_path
+        self, image_state, tmp_images, tmp_path
     ):
         dest_dir = tmp_path / "exported"
         dest_dir.mkdir()
-        image_state.favourites.add(fake_images[0])
-        image_state.favourites.add(fake_images[1])
+        image_state.favourites.add(tmp_images[0])
+        image_state.favourites.add(tmp_images[1])
         image_state.save_favourites(dest_dir)
-        assert (dest_dir / fake_images[0].name).exists()
-        assert (dest_dir / fake_images[1].name).exists()
+        assert (dest_dir / tmp_images[0].name).exists()
+        assert (dest_dir / tmp_images[1].name).exists()
 
     def test_save_favourites_skips_existing_files(
-        self, image_state, fake_images, tmp_path, capsys
+        self, image_state, tmp_images, tmp_path, capsys
     ):
         dest_dir = tmp_path / "exported"
         dest_dir.mkdir()
-        existing = dest_dir / fake_images[0].name
+        existing = dest_dir / tmp_images[0].name
         existing.write_text("existing content")
-        image_state.favourites.add(fake_images[0])
+        image_state.favourites.add(tmp_images[0])
         image_state.save_favourites(dest_dir)
         assert existing.read_text() == "existing content"
         captured = capsys.readouterr()

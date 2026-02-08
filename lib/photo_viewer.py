@@ -34,10 +34,7 @@ class PhotoViewer(QMainWindow):
         central_widget = EmptyView(self)
         self.setCentralWidget(central_widget)
 
-        self.help_overlay = HelpOverlay(central_widget)
-        self.help_overlay.adjustSize()  # Has 0 size otherwise
-        self.help_overlay.hide()
-        self.help_overlay.raise_()
+        self.help_overlay = None
 
         if filepath:
             self.load_path(filepath)
@@ -56,9 +53,12 @@ class PhotoViewer(QMainWindow):
             self.showFullScreen()
 
     def action_toggle_help(self):
-        if self.help_overlay.isVisible():
-            self.help_overlay.hide()
+        if self.help_overlay:
+            self.help_overlay.deleteLater()
+            self.help_overlay = None
         else:
+            central = self.centralWidget()
+            self.help_overlay = HelpOverlay(self.all_commands(), central)
             self.help_overlay.show()
             self.help_overlay.raise_()
 
@@ -99,21 +99,22 @@ class PhotoViewer(QMainWindow):
             ),
         ]
 
+    def all_commands(self):
+        view_commands = self.centralWidget().commands()  # pyright: ignore
+        return view_commands + self.commands()
+
     ######################
     # Function Overloads #
     ######################
 
     def keyPressEvent(self, event: QKeyEvent):
-        central = self.centralWidget()
-        all_commands = central.commands() + self.commands()
-        if not handle_key_event(event, all_commands):
+        if not handle_key_event(event, self.all_commands()):
             super().keyPressEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        x = self.centralWidget().width() // 2 - self.help_overlay.width() // 2
-        y = self.centralWidget().height() // 2 - self.help_overlay.height() // 2
-        self.help_overlay.move(x, y)
+        if self.help_overlay:
+            self.help_overlay.resize_and_center()
 
     ####################
     # Helper Functions #
@@ -123,9 +124,7 @@ class PhotoViewer(QMainWindow):
         old_view = self.takeCentralWidget()
         self.setCentralWidget(new_view)
         old_view.deleteLater()
-        self.help_overlay.setParent(new_view)
-        self.help_overlay.hide()
-        self.help_overlay.raise_()
+        self.help_overlay = None
 
     def swap_to_wall_view(self, state: ImageState):
         wall_view = WallView(state, self.swap_to_single_view)

@@ -1,8 +1,10 @@
 from typing import Callable, List
 
 from PySide6.QtWidgets import QWidget, QScrollArea
-from PySide6.QtGui import QShortcut, QResizeEvent, QKeySequence
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtCore import Qt, QThreadPool
+
+from lib.command import Command, NoModifier
 
 from lib.state import ImageState
 from lib.photo import Thumbnail
@@ -125,22 +127,46 @@ class WallView(QScrollArea):
         # Widgets #
         ###########
 
+        self.state = state
+
+        # This needs to come from the parent class so we have to pass it in as
+        # an argument
+        self.swap_to_single_view = swap_to_single_view
+
         self.masonry_wall = MasonryWall(state, swap_to_single_view)
         self.setWidget(self.masonry_wall)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        #############
-        # Shortcuts #
-        #############
+    ############
+    # Commands #
+    ############
 
-        QShortcut(QKeySequence("W"), self, lambda: swap_to_single_view(state))
-        QShortcut(QKeySequence("Shift+F"), self, self.toggle_only_favourites)
-        QShortcut(QKeySequence("Shift+D"), self, self.toggle_only_to_delete)
+    def commands(self):
+        return [
+            Command(
+                key=Qt.Key.Key_W,
+                modifiers=NoModifier,
+                description="Single view",
+                action=lambda: self.swap_to_single_view(self.state),
+            ),
+            Command(
+                key=Qt.Key.Key_F,
+                modifiers=Qt.KeyboardModifier.ShiftModifier,
+                description="Show only favourites (toggle)",
+                action=self.action_only_favourites,
+            ),
+            Command(
+                key=Qt.Key.Key_D,
+                modifiers=Qt.KeyboardModifier.ShiftModifier,
+                description="Show only to delete (toggle)",
+                action=self.action_only_to_delete,
+            ),
+        ]
 
-    def toggle_only_favourites(self):
+    def action_only_favourites(self):
         self.masonry_wall.toggle_only_favourites()
 
-    def toggle_only_to_delete(self):
+    def action_only_to_delete(self):
         self.masonry_wall.toggle_only_to_delete()

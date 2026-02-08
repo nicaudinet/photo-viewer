@@ -6,8 +6,10 @@ from PySide6.QtWidgets import (
     QWidget,
     QFileDialog,
 )
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtCore import Qt
+
+from lib.command import Command, NoModifier, handle_key_event
 
 from lib.state import ImageState, load_image_state
 from lib.help_overlay import HelpOverlay
@@ -24,15 +26,6 @@ class PhotoViewer(QMainWindow):
 
         self.setWindowTitle("Photo Viewer")
         self.setGeometry(100, 100, 800, 600)
-
-        #############
-        # Shortcuts #
-        #############
-
-        QShortcut(QKeySequence("?"), self, self.action_toggle_help)
-        QShortcut(QKeySequence("Q"), self, self.action_quit)
-        QShortcut(QKeySequence("E"), self, self.action_fullscreen)
-        QShortcut(QKeySequence("O"), self, self.action_open_directory)
 
         ###########
         # Widgets #
@@ -74,9 +67,47 @@ class PhotoViewer(QMainWindow):
         if image_state:
             self.swap_to_single_view(image_state)
 
+    ############
+    # Commands #
+    ############
+
+    def commands(self):
+        return [
+            Command(
+                key=Qt.Key.Key_Question,
+                modifiers=NoModifier,
+                description="Show help (toggle)",
+                action=self.action_toggle_help,
+            ),
+            Command(
+                key=Qt.Key.Key_Q,
+                modifiers=NoModifier,
+                description="Quit application",
+                action=self.action_quit,
+            ),
+            Command(
+                key=Qt.Key.Key_E,
+                modifiers=NoModifier,
+                description="Fullscreen (toggle)",
+                action=self.action_fullscreen,
+            ),
+            Command(
+                key=Qt.Key.Key_O,
+                modifiers=NoModifier,
+                description="Open directory",
+                action=self.action_open_directory,
+            ),
+        ]
+
     ######################
     # Function Overloads #
     ######################
+
+    def keyPressEvent(self, event: QKeyEvent):
+        central = self.centralWidget()
+        all_commands = central.commands() + self.commands()
+        if not handle_key_event(event, all_commands):
+            super().keyPressEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

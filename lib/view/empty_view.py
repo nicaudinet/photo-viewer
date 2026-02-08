@@ -20,3 +20,6 @@ class EmptyView(QWidget):
         self.empty_label.setStyleSheet("border: 2px dashed #aaa;")
         self.empty_label.setMinimumSize(400, 400)
         layout.addWidget(self.empty_label)
+
+    def commands(self):
+        return []

@@ -1,4 +1,4 @@
-from typing import Callable, List, NamedTuple
+from typing import Callable, List, NamedTuple, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
@@ -6,7 +6,7 @@ from PySide6.QtGui import QKeyEvent
 
 class Command(NamedTuple):
     key: Qt.Key
-    modifiers: Qt.KeyboardModifier
+    modifiers: Optional[Qt.KeyboardModifier]
     description: str
     action: Callable[[], None]
 
@@ -36,9 +36,9 @@ _KEY_NAMES = {
 
 def key_display_name(cmd: Command) -> str:
     parts = []
-    if cmd.modifiers & Qt.KeyboardModifier.ControlModifier:
+    if cmd.modifiers and cmd.modifiers & Qt.KeyboardModifier.ControlModifier:
         parts.append("Ctrl")
-    if cmd.modifiers & Qt.KeyboardModifier.ShiftModifier:
+    if cmd.modifiers and cmd.modifiers & Qt.KeyboardModifier.ShiftModifier:
         parts.append("Shift")
     if cmd.key in _KEY_NAMES:
         parts.append(_KEY_NAMES[cmd.key])
@@ -50,7 +50,8 @@ def key_display_name(cmd: Command) -> str:
 def handle_key_event(event: QKeyEvent, commands: List[Command]) -> bool:
     event_mods = event.modifiers() & MODIFIER_BITMASK
     for cmd in commands:
-        if event.key() == cmd.key and event_mods == cmd.modifiers:
+        mods_match = cmd.modifiers is None or event_mods == cmd.modifiers
+        if event.key() == cmd.key and mods_match:
             cmd.action()
             event.accept()
             return True

@@ -75,13 +75,13 @@ class PhotoViewer(QMainWindow):
         return [
             Command(
                 key=Qt.Key.Key_Question,
-                modifiers=NoModifier,
+                modifiers=None,
                 description="Show help (toggle)",
                 action=self.action_toggle_help,
             ),
             Command(
                 key=Qt.Key.Key_Q,
-                modifiers=NoModifier,
+                modifiers=None,
                 description="Quit application",
                 action=self.action_quit,
             ),

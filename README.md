@@ -1,3 +1,15 @@
+# Simple build
+
+I'm using Python 3.11 for this project
+
+```bash
+python3.11 -m venv venv
+source venv/bin/activate.fish
+python3.11 -m pip install -r requirements.txt
+```
+
+# Building on Fedora
+
 To build in a toolbox on Fedora Silverblue:
 
 ```bash

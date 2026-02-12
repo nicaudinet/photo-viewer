@@ -1,7 +1,7 @@
 import pytest
-from pathlib import Path
 from PIL import Image
 
+from lib.photo_viewer import PhotoViewer
 from lib.state import ImageState, IMAGE_EXTENSIONS
 from lib.pointed_list import PointedList
 
@@ -49,3 +49,17 @@ def image_state(tmp_image_dir, tmp_images):
         favourites_file=cache_dir / "favourites",
         to_delete_file=cache_dir / "to_delete",
     )
+
+
+@pytest.fixture
+def single_view(qtbot, image_state):
+    """
+    Create a PhotoViewer with a SingleView loaded from image_state.
+    """
+    viewer = PhotoViewer(None)
+    qtbot.addWidget(viewer)
+    viewer.swap_to_single_view(image_state)
+    viewer.show()
+    qtbot.waitExposed(viewer)
+    qtbot.waitActive(viewer)
+    return viewer

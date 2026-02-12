@@ -69,7 +69,9 @@ class TestPhotoViewer:
         assert not viewer.isFullScreen()
 
     def test_pressing_o_opens_directory_dialog(
-        self, qtbot, tmp_image_dir, tmp_images
+        self,
+        qtbot,
+        tmp_image_dir,
     ):
         viewer = PhotoViewer(None)
         qtbot.addWidget(viewer)
@@ -91,7 +93,10 @@ class TestPhotoViewer:
         )
 
     def test_opening_directory_swaps_to_single_view(
-        self, qtbot, tmp_image_dir, tmp_images
+        self,
+        qtbot,
+        tmp_image_dir,
+        tmp_images,
     ):
         viewer = PhotoViewer(None)
         qtbot.addWidget(viewer)

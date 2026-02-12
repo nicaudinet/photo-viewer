@@ -10,7 +10,7 @@ class PointedList(Generic[T]):
 
     def __init__(self, list: List[T]):
         assert len(list) > 0, "The list in a PointedList cannot be empty"
-        self.list = list
+        self.list = list.copy()
         self.index = 0
 
     def __iter__(self) -> Iterator[T]:

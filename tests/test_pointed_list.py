@@ -124,6 +124,14 @@ class TestDelete:
         assert pl.index == 0
 
 
+class TestOwnership:
+    def test_delete_does_not_mutate_original_list(self):
+        original = [1, 2, 3]
+        pl = PointedList(original)
+        pl.delete()
+        assert original == [1, 2, 3]
+
+
 class TestIteration:
     def test_iterates_all_elements(self):
         pl = PointedList([1, 2, 3])

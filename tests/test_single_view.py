@@ -1,3 +1,4 @@
+from PIL import Image
 from PySide6.QtCore import Qt
 
 
@@ -59,3 +60,32 @@ class TestSingleViewNavigation:
         qtbot.keyClick(single_view, Qt.Key.Key_Left)
 
         assert image_state.current() == images[-1]
+
+
+class TestSingleViewRotation:
+
+    def test_r_rotates_current_image(
+        self,
+        qtbot,
+        single_view,
+        image_state,
+    ):
+        image_path = image_state.current()
+        assert Image.open(image_path).size == (100, 50)
+
+        qtbot.keyClick(single_view, Qt.Key.Key_R)
+
+        assert Image.open(image_path).size == (50, 100)
+
+    def test_r_only_rotates_current_image(
+        self,
+        qtbot,
+        single_view,
+        image_state,
+    ):
+        images = image_state.image_paths.list
+
+        qtbot.keyClick(single_view, Qt.Key.Key_R)
+
+        for image_path in images[1:]:
+            assert Image.open(image_path).size == (100, 50)

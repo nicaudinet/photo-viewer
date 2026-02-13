@@ -63,3 +63,17 @@ def single_view(qtbot, image_state):
     qtbot.waitExposed(viewer)
     qtbot.waitActive(viewer)
     return viewer
+
+
+@pytest.fixture
+def wall_view(qtbot, image_state):
+    """
+    Create a PhotoViewer with a WallView loaded from image_state.
+    """
+    viewer = PhotoViewer(None)
+    qtbot.addWidget(viewer)
+    viewer.swap_to_wall_view(image_state)
+    viewer.show()
+    qtbot.waitExposed(viewer)
+    qtbot.waitActive(viewer)
+    return viewer

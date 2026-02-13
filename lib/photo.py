@@ -139,6 +139,8 @@ class LargePhoto(Photo):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if not self.image_path.exists():
+            return
         image = Image.open(self.image_path)
         width, height = self.image_label.size().toTuple()
         ratio = min(width / image.width, height / image.height)

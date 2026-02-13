@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from lib.state import ImageState, load_image_state, IMAGE_EXTENSIONS
 from lib.pointed_list import PointedList
+
 from tests.fixtures import tmp_image_dir, tmp_images, image_state
 
 

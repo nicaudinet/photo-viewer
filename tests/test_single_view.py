@@ -6,6 +6,8 @@ from PySide6.QtWidgets import QDialog
 
 from lib.view.wall_view import WallView
 
+from tests.fixtures import tmp_image_dir, tmp_images, image_state, single_view
+
 
 class TestSingleViewNavigation:
 
@@ -17,9 +19,7 @@ class TestSingleViewNavigation:
     ):
         images = image_state.image_paths.list
         assert image_state.current() == images[0]
-
         qtbot.keyClick(single_view, Qt.Key.Key_Right)
-
         assert image_state.current() == images[1]
 
     def test_left_arrow_goes_to_previous_image(
@@ -29,12 +29,9 @@ class TestSingleViewNavigation:
         image_state,
     ):
         images = image_state.image_paths.list
-
         qtbot.keyClick(single_view, Qt.Key.Key_Right)
         assert image_state.current() == images[1]
-
         qtbot.keyClick(single_view, Qt.Key.Key_Left)
-
         assert image_state.current() == images[0]
 
     def test_right_arrow_wraps_to_first_image(
@@ -44,13 +41,10 @@ class TestSingleViewNavigation:
         image_state,
     ):
         images = image_state.image_paths.list
-
         for _ in range(len(images) - 1):
             qtbot.keyClick(single_view, Qt.Key.Key_Right)
         assert image_state.current() == images[-1]
-
         qtbot.keyClick(single_view, Qt.Key.Key_Right)
-
         assert image_state.current() == images[0]
 
     def test_left_arrow_wraps_to_last_image(
@@ -61,9 +55,7 @@ class TestSingleViewNavigation:
     ):
         images = image_state.image_paths.list
         assert image_state.current() == images[0]
-
         qtbot.keyClick(single_view, Qt.Key.Key_Left)
-
         assert image_state.current() == images[-1]
 
 
@@ -77,9 +69,7 @@ class TestSingleViewRotation:
     ):
         image_path = image_state.current()
         assert Image.open(image_path).size == (100, 50)
-
         qtbot.keyClick(single_view, Qt.Key.Key_R)
-
         assert Image.open(image_path).size == (50, 100)
 
     def test_r_only_rotates_current_image(
@@ -89,22 +79,15 @@ class TestSingleViewRotation:
         image_state,
     ):
         images = image_state.image_paths.list
-
         qtbot.keyClick(single_view, Qt.Key.Key_R)
-
         for image_path in images[1:]:
             assert Image.open(image_path).size == (100, 50)
 
 
 class TestSingleViewSwap:
 
-    def test_w_switches_to_wall_view(
-        self,
-        qtbot,
-        single_view,
-    ):
+    def test_w_switches_to_wall_view(self, qtbot, single_view):
         qtbot.keyClick(single_view, Qt.Key.Key_W)
-
         assert isinstance(single_view.centralWidget(), WallView)
 
 
@@ -118,9 +101,7 @@ class TestSingleViewFavourite:
     ):
         image_path = image_state.current()
         assert image_path not in image_state.favourites
-
         qtbot.keyClick(single_view, Qt.Key.Key_F)
-
         assert image_path in image_state.favourites
 
     def test_f_unfavourites_already_favourited_image(
@@ -130,12 +111,9 @@ class TestSingleViewFavourite:
         image_state,
     ):
         image_path = image_state.current()
-
         qtbot.keyClick(single_view, Qt.Key.Key_F)
         assert image_path in image_state.favourites
-
         qtbot.keyClick(single_view, Qt.Key.Key_F)
-
         assert image_path not in image_state.favourites
 
 
@@ -149,9 +127,7 @@ class TestSingleViewDelete:
     ):
         image_path = image_state.current()
         assert image_path not in image_state.to_delete
-
         qtbot.keyClick(single_view, Qt.Key.Key_D)
-
         assert image_path in image_state.to_delete
 
     def test_d_unmarks_already_marked_image(
@@ -161,12 +137,9 @@ class TestSingleViewDelete:
         image_state,
     ):
         image_path = image_state.current()
-
         qtbot.keyClick(single_view, Qt.Key.Key_D)
         assert image_path in image_state.to_delete
-
         qtbot.keyClick(single_view, Qt.Key.Key_D)
-
         assert image_path not in image_state.to_delete
 
 
@@ -181,16 +154,17 @@ class TestSingleViewSaveFavourites:
     ):
         dest_dir = tmp_path / "favourites"
         dest_dir.mkdir()
-
         qtbot.keyClick(single_view, Qt.Key.Key_F)
         favourited = image_state.current()
-
         with patch(
             "lib.view.single_view.QFileDialog.getExistingDirectory",
             return_value=str(dest_dir),
         ):
-            qtbot.keyClick(single_view, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
-
+            qtbot.keyClick(
+                single_view,
+                Qt.Key.Key_F,
+                Qt.KeyboardModifier.ControlModifier,
+            )
         assert (dest_dir / favourited.name).exists()
 
 
@@ -204,13 +178,15 @@ class TestSingleViewDeleteAll:
     ):
         qtbot.keyClick(single_view, Qt.Key.Key_D)
         marked = image_state.current()
-
         with patch(
             "lib.view.single_view.DeleteConfirmDialog.exec",
             return_value=QDialog.DialogCode.Rejected,
         ):
-            qtbot.keyClick(single_view, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
-
+            qtbot.keyClick(
+                single_view,
+                Qt.Key.Key_D,
+                Qt.KeyboardModifier.ControlModifier,
+            )
         assert marked.exists()
         assert marked in image_state.to_delete
 
@@ -223,13 +199,15 @@ class TestSingleViewDeleteAll:
         qtbot.keyClick(single_view, Qt.Key.Key_D)
         marked = image_state.current()
         assert marked.exists()
-
         with patch(
             "lib.view.single_view.DeleteConfirmDialog.exec",
             return_value=QDialog.DialogCode.Accepted,
         ):
-            qtbot.keyClick(single_view, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
-
+            qtbot.keyClick(
+                single_view,
+                Qt.Key.Key_D,
+                Qt.KeyboardModifier.ControlModifier,
+            )
         assert not marked.exists()
         assert marked not in image_state.to_delete
         assert marked not in image_state.image_paths

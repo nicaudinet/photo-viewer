@@ -6,4 +6,5 @@ pyinstaller==6.17.0
 pyobjc-framework-Cocoa==12.1; sys_platform == "darwin"
 
 pytest==8.3.5
+pytest-cov==7.0.0
 pytest-qt==4.5.0

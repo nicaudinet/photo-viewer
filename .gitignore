@@ -9,3 +9,4 @@ main.spec
 tests/__pycache__
 tests/__init__.py
 .claude
+.coverage

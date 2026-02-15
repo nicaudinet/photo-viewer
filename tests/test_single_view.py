@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog
 
 from lib.view.wall_view import WallView
+from lib.view.single_view import DeleteConfirmDialog
 
 from tests.fixtures import tmp_image_dir, tmp_images, image_state, single_view
 
@@ -211,3 +212,52 @@ class TestSingleViewDeleteAll:
         assert not marked.exists()
         assert marked not in image_state.to_delete
         assert marked not in image_state.image_paths
+
+
+class TestDeleteConfirmDialogMessage:
+
+    def test_singular_message(self, qtbot):
+        dialog = DeleteConfirmDialog(1)
+        qtbot.addWidget(dialog)
+        assert dialog.windowTitle() == "Confirm Deletion"
+
+    def test_plural_message(self, qtbot):
+        dialog = DeleteConfirmDialog(5)
+        qtbot.addWidget(dialog)
+        assert dialog.windowTitle() == "Confirm Deletion"
+
+
+class TestSingleViewRotateError:
+
+    def test_rotate_handles_invalid_image(
+        self,
+        qtbot,
+        single_view,
+        image_state,
+        capsys,
+    ):
+        image_path = image_state.current()
+        # Overwrite the current image with invalid data
+        image_path.write_text("not an image")
+        qtbot.keyClick(single_view, Qt.Key.Key_R)
+        captured = capsys.readouterr()
+        assert "Error rotating image" in captured.out
+        # Remove the corrupt file so LargePhoto.resizeEvent doesn't crash
+        image_path.unlink()
+
+
+class TestSingleViewDeleteDoesNotMarkFavourite:
+
+    def test_d_does_not_mark_favourited_image_for_deletion(
+        self,
+        qtbot,
+        single_view,
+        image_state,
+    ):
+        image_path = image_state.current()
+        # First favourite the image
+        qtbot.keyClick(single_view, Qt.Key.Key_F)
+        assert image_path in image_state.favourites
+        # Try to mark for deletion — should be a no-op
+        qtbot.keyClick(single_view, Qt.Key.Key_D)
+        assert image_path not in image_state.to_delete

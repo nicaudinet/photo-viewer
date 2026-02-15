@@ -112,3 +112,49 @@ class TestPhotoViewer:
             qtbot.keyClick(viewer, Qt.Key.Key_O)
 
         assert isinstance(viewer.centralWidget(), SingleView)
+
+    def test_load_path_with_file(self, qtbot, tmp_image_dir, tmp_images):
+        viewer = PhotoViewer(tmp_images[1])
+        qtbot.addWidget(viewer)
+        assert isinstance(viewer.centralWidget(), SingleView)
+
+    def test_load_path_with_directory(self, qtbot, tmp_image_dir, tmp_images):
+        viewer = PhotoViewer(tmp_image_dir)
+        qtbot.addWidget(viewer)
+        assert isinstance(viewer.centralWidget(), SingleView)
+
+    def test_load_path_raises_for_empty_directory(self, qtbot, tmp_image_dir):
+        with pytest.raises(ValueError, match="is empty"):
+            PhotoViewer(tmp_image_dir)
+
+    def test_resize_with_help_overlay(self, qtbot, tmp_image_dir, tmp_images):
+        viewer = PhotoViewer(tmp_image_dir)
+        qtbot.addWidget(viewer)
+        viewer.show()
+        qtbot.waitExposed(viewer)
+        qtbot.waitActive(viewer)
+
+        # Open help overlay
+        qtbot.keyClick(viewer, Qt.Key.Key_Question)
+        assert viewer.help_overlay is not None
+
+        # Trigger resize — should call help_overlay.resize_and_center
+        viewer.resize(900, 700)
+
+    def test_open_directory_cancelled(self, qtbot):
+        viewer = PhotoViewer(None)
+        qtbot.addWidget(viewer)
+        viewer.show()
+        qtbot.waitExposed(viewer)
+        qtbot.waitActive(viewer)
+
+        with patch(
+            "lib.photo_viewer.QFileDialog.getExistingDirectory",
+            return_value="",
+        ):
+            qtbot.keyClick(viewer, Qt.Key.Key_O)
+
+        # Should still be the EmptyView since dialog was cancelled
+        from lib.view.empty_view import EmptyView
+
+        assert isinstance(viewer.centralWidget(), EmptyView)

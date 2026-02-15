@@ -234,6 +234,18 @@ class TestLoadImageState:
         captured = capsys.readouterr()
         assert "not in image paths" in captured.out
 
+    def test_load_ignores_stale_to_delete_paths(self, tmp_image_dir, capsys):
+        img = tmp_image_dir / "a.png"
+        img.write_text("image")
+        cache_dir = tmp_image_dir / ".photo-viewer"
+        cache_dir.mkdir()
+        to_delete_file = cache_dir / "to_delete"
+        to_delete_file.write_text("/nonexistent/image.png")
+        state = load_image_state(tmp_image_dir)
+        assert len(state.to_delete) == 0
+        captured = capsys.readouterr()
+        assert "not in image paths" in captured.out
+
     def test_load_initializes_empty_without_cache(self, tmp_image_dir, capsys):
         (tmp_image_dir / "a.png").write_text("image")
         state = load_image_state(tmp_image_dir)
@@ -241,3 +253,14 @@ class TestLoadImageState:
         assert len(state.to_delete) == 0
         captured = capsys.readouterr()
         assert "not found in cache" in captured.out
+
+
+class TestDeleteAllSkipsNonMarked:
+    def test_delete_all_skips_unmarked_images(self, image_state, tmp_images):
+        """Mark only the second image; delete_all must skip past the first."""
+        image_state.delete(tmp_images[1])
+        image_state.delete_all()
+        assert tmp_images[0].exists()
+        assert not tmp_images[1].exists()
+        assert tmp_images[2].exists()
+        assert len(image_state.to_delete) == 0

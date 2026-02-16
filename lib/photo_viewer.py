@@ -62,6 +62,11 @@ class PhotoViewer(QMainWindow):
             self.help_overlay.show()
             self.help_overlay.raise_()
 
+    def action_close_help(self):
+        if self.help_overlay:
+            self.help_overlay.deleteLater()
+            self.help_overlay = None
+
     def action_open_directory(self):
         image_state = self.choose_directory()
         if image_state:
@@ -78,6 +83,12 @@ class PhotoViewer(QMainWindow):
                 modifiers=None,
                 description="Show help (toggle)",
                 action=self.action_toggle_help,
+            ),
+            Command(
+                key=Qt.Key.Key_Escape,
+                modifiers=None,
+                description="Close help",
+                action=self.action_close_help,
             ),
             Command(
                 key=Qt.Key.Key_Q,

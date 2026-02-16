@@ -62,25 +62,35 @@ class TestSingleViewNavigation:
 
 class TestSingleViewRotation:
 
-    def test_r_rotates_current_image(
-        self,
-        qtbot,
-        single_view,
-        image_state,
-    ):
-        image_path = image_state.current()
-        assert Image.open(image_path).size == (100, 50)
-        qtbot.keyClick(single_view, Qt.Key.Key_R)
-        assert Image.open(image_path).size == (50, 100)
-
-    def test_r_only_rotates_current_image(
+    def test_rotate_current_image_anticlockwise(
         self,
         qtbot,
         single_view,
         image_state,
     ):
         images = image_state.image_paths.list
+        image_path = image_state.current()
+        assert Image.open(image_path).size == (100, 50)
         qtbot.keyClick(single_view, Qt.Key.Key_R)
+        assert Image.open(image_path).size == (50, 100)
+        for image_path in images[1:]:
+            assert Image.open(image_path).size == (100, 50)
+
+    def test_rotate_current_image_clockwise(
+        self,
+        qtbot,
+        single_view,
+        image_state,
+    ):
+        images = image_state.image_paths.list
+        image_path = image_state.current()
+        assert Image.open(image_path).size == (100, 50)
+        qtbot.keyClick(
+            single_view,
+            Qt.Key.Key_R,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        assert Image.open(image_path).size == (50, 100)
         for image_path in images[1:]:
             assert Image.open(image_path).size == (100, 50)
 

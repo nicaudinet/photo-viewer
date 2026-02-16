@@ -109,8 +109,14 @@ class SingleView(QWidget):
             Command(
                 key=Qt.Key.Key_R,
                 modifiers=NoModifier,
-                description="Rotate image 90°",
-                action=self.action_rotate,
+                description="Rotate anticlockwise",
+                action=self.action_rotate_anticlockwise,
+            ),
+            Command(
+                key=Qt.Key.Key_R,
+                modifiers=Qt.KeyboardModifier.ShiftModifier,
+                description="Rotate clockwise",
+                action=self.action_rotate_clockwise,
             ),
             Command(
                 key=Qt.Key.Key_F,
@@ -156,8 +162,12 @@ class SingleView(QWidget):
         self.state.next()
         self.replace_image()
 
-    def action_rotate(self):
-        self.rotate_image()
+    def action_rotate_anticlockwise(self):
+        self.rotate_image(degrees=90)
+        self.replace_image()
+
+    def action_rotate_clockwise(self):
+        self.rotate_image(degrees=-90)
         self.replace_image()
 
     def action_favourite(self):
@@ -215,11 +225,11 @@ class SingleView(QWidget):
             layout.replaceWidget(old_photo, self.current_photo)
         old_photo.deleteLater()
 
-    def rotate_image(self):
+    def rotate_image(self, degrees):
         try:
             image_path = self.state.current()
             image = Image.open(image_path)
-            image = image.rotate(90, expand=True)
+            image = image.rotate(degrees, expand=True)
             image.save(image_path)
         except Exception as e:
             print(f"Error rotating image: {e}")

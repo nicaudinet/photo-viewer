@@ -153,13 +153,13 @@ class WallView(QScrollArea):
             ),
             Command(
                 key=Qt.Key.Key_F,
-                modifiers=Qt.KeyboardModifier.ShiftModifier,
+                modifiers=NoModifier,
                 description="Show only favourites (toggle)",
                 action=self.action_only_favourites,
             ),
             Command(
                 key=Qt.Key.Key_D,
-                modifiers=Qt.KeyboardModifier.ShiftModifier,
+                modifiers=NoModifier,
                 description="Show only to delete (toggle)",
                 action=self.action_only_to_delete,
             ),

@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from PIL import Image
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog
@@ -12,51 +14,62 @@ from tests.fixtures import tmp_image_dir, tmp_images, image_state, single_view
 
 class TestSingleViewNavigation:
 
-    def test_right_arrow_advances_to_next_image(
+    LEFT_KEYS = [Qt.Key.Key_Left, Qt.Key.Key_H]
+    RIGHT_KEYS = [Qt.Key.Key_Right, Qt.Key.Key_L]
+
+    @pytest.mark.parametrize("key", RIGHT_KEYS)
+    def test_next_image(
         self,
+        key,
         qtbot,
         single_view,
         image_state,
     ):
         images = image_state.image_paths.list
         assert image_state.current() == images[0]
-        qtbot.keyClick(single_view, Qt.Key.Key_Right)
+        qtbot.keyClick(single_view, key)
         assert image_state.current() == images[1]
 
-    def test_left_arrow_goes_to_previous_image(
+    @pytest.mark.parametrize("key", RIGHT_KEYS)
+    def test_next_image_wraps_to_first_image(
         self,
-        qtbot,
-        single_view,
-        image_state,
-    ):
-        images = image_state.image_paths.list
-        qtbot.keyClick(single_view, Qt.Key.Key_Right)
-        assert image_state.current() == images[1]
-        qtbot.keyClick(single_view, Qt.Key.Key_Left)
-        assert image_state.current() == images[0]
-
-    def test_right_arrow_wraps_to_first_image(
-        self,
+        key,
         qtbot,
         single_view,
         image_state,
     ):
         images = image_state.image_paths.list
         for _ in range(len(images) - 1):
-            qtbot.keyClick(single_view, Qt.Key.Key_Right)
+            qtbot.keyClick(single_view, key)
         assert image_state.current() == images[-1]
-        qtbot.keyClick(single_view, Qt.Key.Key_Right)
+        qtbot.keyClick(single_view, key)
         assert image_state.current() == images[0]
 
-    def test_left_arrow_wraps_to_last_image(
+    @pytest.mark.parametrize("key", LEFT_KEYS)
+    def test_previous_image(
         self,
+        key,
+        qtbot,
+        single_view,
+        image_state,
+    ):
+        images = image_state.image_paths.list
+        qtbot.keyClick(single_view, Qt.Key.Key_Right)
+        assert image_state.current() == images[1]
+        qtbot.keyClick(single_view, key)
+        assert image_state.current() == images[0]
+
+    @pytest.mark.parametrize("key", LEFT_KEYS)
+    def test_previous_image_wraps_to_last_image(
+        self,
+        key,
         qtbot,
         single_view,
         image_state,
     ):
         images = image_state.image_paths.list
         assert image_state.current() == images[0]
-        qtbot.keyClick(single_view, Qt.Key.Key_Left)
+        qtbot.keyClick(single_view, key)
         assert image_state.current() == images[-1]
 
 

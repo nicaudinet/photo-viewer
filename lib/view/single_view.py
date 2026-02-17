@@ -101,7 +101,19 @@ class SingleView(QWidget):
                 action=self.action_prev,
             ),
             Command(
+                key=Qt.Key.Key_H,
+                modifiers=NoModifier,
+                description="Previous image",
+                action=self.action_prev,
+            ),
+            Command(
                 key=Qt.Key.Key_Right,
+                modifiers=NoModifier,
+                description="Next image",
+                action=self.action_next,
+            ),
+            Command(
+                key=Qt.Key.Key_L,
                 modifiers=NoModifier,
                 description="Next image",
                 action=self.action_next,

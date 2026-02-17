@@ -25,7 +25,7 @@ def tmp_images(tmp_image_dir):
     detect rotation by checking if dimensions become 50x100.
     """
     images = []
-    names = [f"{i}.{ext}" for i, ext in enumerate(IMAGE_EXTENSIONS)]
+    names = [f"{i}{ext}" for i, ext in enumerate(IMAGE_EXTENSIONS)]
     for name in names:
         img_path = tmp_image_dir / name
         img = Image.new("RGB", (100, 50), color="red")

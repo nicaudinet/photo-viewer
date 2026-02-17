@@ -1,3 +1,4 @@
+import sys
 from typing import Callable
 from pathlib import Path
 from PIL import Image
@@ -73,8 +74,13 @@ class Photo(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.image_label)
 
+        if getattr(sys, "frozen", False):
+            _icons_dir = Path(sys._MEIPASS) / "icons"
+        else:
+            _icons_dir = Path(__file__).parent.parent / "icons"
+
         self.star_label = QLabel(self)
-        star_icon = QIcon("./icons/star.png")
+        star_icon = QIcon(str(_icons_dir / "star.png"))
         star_pixmap = star_icon.pixmap(self.ICON_SIZE, self.ICON_SIZE)
         self.star_label.setPixmap(star_pixmap)
         self.star_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
@@ -82,7 +88,7 @@ class Photo(QWidget):
         self.star_label.raise_()
 
         self.delete_label = QLabel(self)
-        delete_icon = QIcon("./icons/delete.png")
+        delete_icon = QIcon(str(_icons_dir / "delete.png"))
         delete_pixmap = delete_icon.pixmap(self.ICON_SIZE, self.ICON_SIZE)
         self.delete_label.setPixmap(delete_pixmap)
         self.delete_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)

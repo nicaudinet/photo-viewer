@@ -23,7 +23,7 @@ $PYTHON -m pip install -r requirements.txt
 OS=$(uname -s)
 
 if [[ "$OS" == "Linux" ]]; then
-    pyinstaller --onefile main.linux.py
+    pyinstaller --onefile --add-data "icons:icons" main.linux.py
 
 elif [[ "$OS" == "Darwin" ]]; then
     SPEC="PhotoViewer.macos.spec"

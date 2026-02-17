@@ -44,6 +44,7 @@ class TestPhotoIcons:
     def test_hide_favourite(self, qtbot, tmp_images):
         photo = Photo(tmp_images[0], is_favourite=True, to_delete=False)
         qtbot.addWidget(photo)
+        assert not photo.star_label.pixmap().isNull()
         assert not photo.star_label.isHidden()
         photo.hide_favourite()
         assert photo.star_label.isHidden()
@@ -58,9 +59,22 @@ class TestPhotoIcons:
     def test_hide_to_delete(self, qtbot, tmp_images):
         photo = Photo(tmp_images[0], is_favourite=False, to_delete=True)
         qtbot.addWidget(photo)
+        assert not photo.delete_label.pixmap().isNull()
         assert not photo.delete_label.isHidden()
         photo.hide_to_delete()
         assert photo.delete_label.isHidden()
+
+    def test_star_icon_loads_regardless_of_cwd(self, qtbot, tmp_images, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        photo = Photo(tmp_images[0], is_favourite=True, to_delete=False)
+        qtbot.addWidget(photo)
+        assert not photo.star_label.pixmap().isNull()
+
+    def test_delete_icon_loads_regardless_of_cwd(self, qtbot, tmp_images, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        photo = Photo(tmp_images[0], is_favourite=False, to_delete=True)
+        qtbot.addWidget(photo)
+        assert not photo.delete_label.pixmap().isNull()
 
 
 class TestThumbnailMaker:

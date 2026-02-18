@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtGui import QPen, QPainter, QColor
+from PySide6.QtGui import QPen, QPainter
 from PySide6.QtCore import Qt
+
+import lib.colors as colors
 
 
 class EmptyLabel(QLabel):
@@ -10,7 +12,7 @@ class EmptyLabel(QLabel):
         super().paintEvent(event)
 
         painter = QPainter(self)
-        pen = QPen(QColor(170, 170, 170))
+        pen = QPen(colors.grey)
         pen.setWidth(2)
         pen.setStyle(Qt.PenStyle.DashLine)
         painter.setPen(pen)

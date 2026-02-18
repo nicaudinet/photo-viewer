@@ -5,7 +5,6 @@ from PySide6.QtGui import QResizeEvent
 from PySide6.QtCore import Qt, QThreadPool
 
 from lib.command import Command, NoModifier
-
 from lib.state import ImageState
 from lib.photo import Thumbnail
 
@@ -50,6 +49,8 @@ class MasonryWall(QWidget):
                 click_callback=click_callback,
                 parent=self,
             )
+            if i == self.state.image_paths.index:
+                thumbnail.image_label.setSelected(True)
             self.thumbnails.append(thumbnail)
             thumbnail.make_thumbnail_async(self.threadpool)
 

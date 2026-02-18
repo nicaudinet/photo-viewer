@@ -3,9 +3,17 @@ from typing import Callable
 from pathlib import Path
 from PIL import Image
 
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
-from PySide6.QtGui import QIcon, QPixmap, QMouseEvent, QImage
 from PySide6.QtCore import Qt, QObject, Signal, Slot, QRunnable, QThreadPool
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PySide6.QtGui import (
+    QIcon,
+    QPixmap,
+    QMouseEvent,
+    QImage,
+    QPen,
+    QPainter,
+    QPalette,
+)
 
 
 def image_to_pixmap(image: Image.Image) -> QPixmap:
@@ -40,6 +48,38 @@ def image_to_pixmap(image: Image.Image) -> QPixmap:
     return QPixmap.fromImage(qimage.copy())
 
 
+class ImageLabel(QLabel):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected = False
+
+    def paintEvent(self, event):
+
+        super().paintEvent(event)
+
+        if self.selected:
+
+            color = self.palette().color(QPalette.ColorRole.Highlight)
+
+            pen = QPen(color)
+            pen.setWidth(4)
+            pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+
+            painter = QPainter(self)
+            painter.setPen(pen)
+
+            offset: int = (1 + pen.width()) // 2
+            rect = self.rect().adjusted(offset, offset, -offset, -offset)
+
+            painter.drawRect(rect)
+
+    def setSelected(self, selected: bool) -> None:
+        print("setting selected")
+        self.selected = selected
+        self.update()
+
+
 class Photo(QWidget):
 
     ICON_SIZE: int = 40
@@ -70,7 +110,7 @@ class Photo(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.image_label = QLabel(self)
+        self.image_label = ImageLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.image_label)
 

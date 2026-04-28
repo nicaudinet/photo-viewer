@@ -9,7 +9,7 @@ def main() -> None:
     # On Linux, use native Wayland backend for correct HiDPI scaling
     if sys.platform == "linux":
         os.environ.setdefault("QT_QPA_PLATFORM", "wayland")
-        os.environ.setdefault("QT_SCALE_FACTOR", "2")
+        os.environ.setdefault("QT_SCALE_FACTOR", "1")
 
     # Check for command-line argument
     filepath = None

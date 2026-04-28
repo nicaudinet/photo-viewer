@@ -76,6 +76,20 @@
 
             shellHook = ''
               export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
+              echo ""
+              echo "photo-viewer dev shell"
+              echo "====================="
+              echo ""
+              echo "Run the app:"
+              echo "  python main.linux.py [path/to/image/or/directory]"
+              echo ""
+              echo "Run tests:"
+              echo "  pytest"
+              echo "  pytest --cov=lib            # with coverage"
+              echo ""
+              echo "Build with Nix:"
+              echo "  nix build                   # produces result/bin/photo-viewer"
+              echo ""
             '';
           };
         }

@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['main.macos.py'],
+    ['lib/main.py'],
     pathex=[],
     binaries=[],
     datas=[("icons", "icons")],

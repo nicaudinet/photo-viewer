@@ -55,6 +55,13 @@
         }
       );
 
+      apps = forAllSystems (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/photo-viewer";
+        };
+      });
+
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
@@ -81,7 +88,7 @@
               echo "====================="
               echo ""
               echo "Run the app:"
-              echo "  python main.linux.py [path/to/image/or/directory]"
+              echo "  python -m lib.main [path/to/image/or/directory]"
               echo ""
               echo "Run tests:"
               echo "  pytest"

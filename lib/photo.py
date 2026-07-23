@@ -1,4 +1,3 @@
-import sys
 from typing import Callable
 from pathlib import Path
 from PIL import Image
@@ -114,10 +113,7 @@ class Photo(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.image_label)
 
-        if getattr(sys, "frozen", False):
-            _icons_dir = Path(sys._MEIPASS) / "icons"
-        else:
-            _icons_dir = Path(__file__).parent.parent / "icons"
+        _icons_dir = Path(__file__).parent.parent / "icons"
 
         self.star_label = QLabel(self)
         star_icon = QIcon(str(_icons_dir / "star.png"))

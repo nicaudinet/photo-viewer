@@ -20,9 +20,9 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
-        in
-        {
-          default = python.pkgs.buildPythonApplication {
+
+          # The cross-platform CLI/GUI application.
+          cli = python.pkgs.buildPythonApplication {
             pname = "photo-viewer";
             version = "0.1.0";
             pyproject = true;
@@ -52,15 +52,118 @@
               cp -r $src/icons $site_packages/icons
             '';
           };
+
+          # macOS bundle metadata. CFBundleDocumentTypes is what lets Finder
+          # offer "Open With > PhotoViewer" and set it as the default viewer.
+          infoPlist = pkgs.writeText "Info.plist" ''
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>CFBundleName</key>                <string>PhotoViewer</string>
+              <key>CFBundleDisplayName</key>         <string>PhotoViewer</string>
+              <key>CFBundleIdentifier</key>          <string>com.nicaudinet.photo-viewer</string>
+              <key>CFBundleVersion</key>             <string>0.1.0</string>
+              <key>CFBundleShortVersionString</key>  <string>0.1.0</string>
+              <key>CFBundleExecutable</key>          <string>PhotoViewer</string>
+              <key>CFBundleIconFile</key>            <string>photo-viewer</string>
+              <key>CFBundlePackageType</key>         <string>APPL</string>
+              <key>NSHighResolutionCapable</key>     <true/>
+              <key>LSMinimumSystemVersion</key>      <string>11.0</string>
+              <key>CFBundleDocumentTypes</key>
+              <array>
+                <dict>
+                  <key>CFBundleTypeName</key>        <string>Image</string>
+                  <key>CFBundleTypeRole</key>        <string>Viewer</string>
+                  <key>LSHandlerRank</key>           <string>Alternate</string>
+                  <key>LSItemContentTypes</key>
+                  <array>
+                    <string>public.image</string>
+                    <string>public.jpeg</string>
+                    <string>public.png</string>
+                  </array>
+                </dict>
+              </array>
+            </dict>
+            </plist>
+          '';
+
+          # A proper PhotoViewer.app bundle built entirely with Nix.
+          appBundle = pkgs.stdenv.mkDerivation {
+            pname = "photo-viewer-app";
+            version = "0.1.0";
+            dontUnpack = true;
+
+            # makeBinaryWrapper (not the shell variant) so the bundle
+            # executable is a real Mach-O binary, which LaunchServices
+            # launches reliably.
+            nativeBuildInputs = [
+              pkgs.makeBinaryWrapper
+              pkgs.imagemagick
+              pkgs.libicns
+            ];
+
+            buildCommand = ''
+              app="$out/Applications/PhotoViewer.app"
+              mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+              cp ${infoPlist} "$app/Contents/Info.plist"
+
+              # Build a multi-resolution .icns from the 512x512 source PNG
+              for size in 16 32 128 256 512; do
+                magick ${./icons/camera.png} -resize "''${size}x''${size}" "icon_''${size}.png"
+              done
+              png2icns "$app/Contents/Resources/photo-viewer.icns" \
+                icon_16.png icon_32.png icon_128.png icon_256.png icon_512.png
+
+              # Bundle executable wraps the CLI application
+              makeWrapper ${cli}/bin/photo-viewer "$app/Contents/MacOS/PhotoViewer"
+            '';
+          };
+
+          # Copies the bundle into ~/Applications so Launch Services indexes
+          # it (nix profile does not put .app bundles where Finder looks).
+          installApp = pkgs.writeShellApplication {
+            name = "install-photo-viewer";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = ''
+              dest="$HOME/Applications/PhotoViewer.app"
+              echo "Installing PhotoViewer.app -> $dest"
+              rm -rf "$dest"
+              mkdir -p "$HOME/Applications"
+              cp -R "${appBundle}/Applications/PhotoViewer.app" "$dest"
+              chmod -R u+w "$dest"
+              echo "Installed. Finder/Spotlight will index it shortly."
+              echo "Right-click an image -> Open With -> PhotoViewer, or set"
+              echo "it as the default for a file type via Get Info."
+            '';
+          };
+        in
+        {
+          photo-viewer = cli;
+          default = if pkgs.stdenv.isDarwin then appBundle else cli;
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          app = appBundle;
+          install-app = installApp;
         }
       );
 
-      apps = forAllSystems (system: {
-        default = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/photo-viewer";
-        };
-      });
+      apps = forAllSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = {
+            type = "app";
+            program = "${self.packages.${system}.photo-viewer}/bin/photo-viewer";
+          };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          install-app = {
+            type = "app";
+            program = "${self.packages.${system}.install-app}/bin/install-photo-viewer";
+          };
+        }
+      );
 
       devShells = forAllSystems (system:
         let
@@ -94,8 +197,10 @@
               echo "  pytest"
               echo "  pytest --cov=lib            # with coverage"
               echo ""
-              echo "Build with Nix:"
-              echo "  nix build                   # produces result/bin/photo-viewer"
+              echo "Build / install with Nix:"
+              echo "  nix run                     # launch the app"
+              echo "  nix build .#app             # build PhotoViewer.app (macOS)"
+              echo "  nix run .#install-app       # install into ~/Applications (macOS)"
               echo ""
             '';
           };

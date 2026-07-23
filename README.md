@@ -1,66 +1,60 @@
-# Simple build
+# PhotoViewer
 
-I'm using Python 3.11 for this project
+A simple image viewer built with PySide6. Built and deployed with Nix flakes.
 
-```bash
-python3.11 -m venv venv
-source venv/bin/activate.fish
-python3.11 -m pip install -r requirements.txt
-```
+## Development
 
-# Building on Fedora
-
-To build in a toolbox on Fedora Silverblue:
+Enter the dev shell (provides Python, PySide6, pytest, etc.):
 
 ```bash
-toolbox create photo-viewer
-toolbox enter photo-viewer
-sudo dnf install -y \
-    python3.11 \
-    python3.11-devel \
-    gcc \
-    patchelf \
-    mesa-libGL \
-    mesa-libEGL \
-    libatomic \
-    freetype \
-    libxkbcommon \
-    libxkbcommon-x11 \
-    dbus-libs \
-    fontconfig \
-    xcb-util-cursor \
-    xcb-util-wm \
-    xcb-util-keysyms \
-    gdk-pixbuf2 \
-    atk \
-    gtk3
-python3.11 -m ensurepip --upgrade
-./build.sh
+nix develop
 ```
 
-Then, I:
+Then:
 
-1) Moved the binary to `~/.local/bin` to put it on my path
-
-2) Added the following ~/.local/share/applications/PhotoViewer.desktop file to make it available via wofi/dmenu:
-
-```
-[Desktop Entry]
-Name=PhotoViewer
-Comment=Open images with PhotoViewer
-Exec=/home/nicaudinet/.local/bin/main.linux %F
-Icon=/home/nicaudinet/.local/share/icons/photo-viewer.png
-Terminal=false
-Type=Application
-Categories=Graphics;Viewer;
-StartupNotify=true
-MimeType=image/png;image/jpeg;image/jpg;image/gif;image/bmp;
+```bash
+python -m lib.main [path/to/image/or/directory]   # run
+pytest                                            # test
+pytest --cov=lib                                  # test with coverage
 ```
 
-3) Added the camera.png icon to home/nicaudinet/.local/share/icons/photo-viewer.png
+## Run
 
-4) Refreshed the XDG mimetype database to make PhotoViewer the default app with which to open PNG or JPEG files
+```bash
+nix run                          # launch
+nix run . -- ~/Pictures/foo.jpg  # open a file or directory
+```
 
+## Install (macOS)
+
+Build and install a proper `PhotoViewer.app` bundle into `~/Applications`:
+
+```bash
+nix run .#install-app
 ```
-update-desktop-database ~/.local/share/applications/
+
+This makes PhotoViewer available in Spotlight and in Finder's
+**Open With** menu, and lets you set it as the default viewer for an image
+type via **Get Info > Open with > Change All**.
+
+Double-clicking or "Open With" passes the file to the app via a macOS
+`QFileOpenEvent` (handled in `lib/main.py`).
+
+To build the bundle without installing:
+
+```bash
+nix build .#app     # result/Applications/PhotoViewer.app
 ```
+
+The bundle is unsigned but built locally, so Gatekeeper allows it without a
+quarantine prompt. If macOS ever blocks it, right-click the app and choose
+**Open** once.
+
+## Install (Linux / CLI)
+
+```bash
+nix profile install .   # puts `photo-viewer` on PATH
+```
+
+For a desktop launcher, add a `~/.local/share/applications/PhotoViewer.desktop`
+entry with `Exec=photo-viewer %F`.

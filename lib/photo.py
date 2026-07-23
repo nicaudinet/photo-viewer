@@ -15,7 +15,10 @@ from PySide6.QtGui import (
 )
 
 
-def image_to_pixmap(image: Image.Image) -> QPixmap:
+def image_to_qimage(image: Image.Image) -> QImage:
+    # QImage does not copy the buffer it is handed, so `.copy()` before the
+    # source bytes go out of scope. QImage is safe to build off the GUI
+    # thread (unlike QPixmap), so decode workers use this directly.
     if image.mode == "RGB":
         data = image.tobytes("raw", "RGB")
         qimage = QImage(
@@ -44,7 +47,11 @@ def image_to_pixmap(image: Image.Image) -> QPixmap:
             image.width * 3,
             QImage.Format.Format_RGB888,
         )
-    return QPixmap.fromImage(qimage.copy())
+    return qimage.copy()
+
+
+def image_to_pixmap(image: Image.Image) -> QPixmap:
+    return QPixmap.fromImage(image_to_qimage(image))
 
 
 class ImageLabel(QLabel):
@@ -162,6 +169,51 @@ class Photo(QWidget):
         self.delete_label.hide()
 
 
+class LargeImageSignals(QObject):
+    # generation lets the receiver discard results from superseded resizes
+    finished = Signal(int, QImage)
+
+
+class LargeImageMaker(QRunnable):
+    """Decode + resize the full image to fit a target size, off the GUI thread.
+
+    Emits the tagged `generation` back so a stale result (a resize that has
+    since been replaced by a newer one) can be dropped rather than painted.
+    """
+
+    def __init__(
+        self,
+        image_path: Path,
+        width: int,
+        height: int,
+        generation: int,
+    ):
+        super().__init__()
+        self.image_path = image_path
+        self.size = (width, height)
+        self.generation = generation
+        self.signals = LargeImageSignals()
+
+    def run(self):
+        try:
+            image = Image.open(self.image_path)
+            width, height = self.size
+            ratio = min(width / image.width, height / image.height)
+            resized_image = image.resize(
+                size=(
+                    max(1, int(ratio * image.width)),
+                    max(1, int(ratio * image.height)),
+                ),
+                resample=Image.Resampling.BICUBIC,
+            )
+            qimage = image_to_qimage(resized_image)
+        except Exception as e:
+            # A missing or corrupt file should not take down the worker thread
+            print(f"Error decoding image {self.image_path}: {e}")
+            return
+        self.signals.finished.emit(self.generation, qimage)
+
+
 class LargePhoto(Photo):
 
     def __init__(
@@ -179,20 +231,33 @@ class LargePhoto(Photo):
             parent=parent,
         )
 
+        self._threadpool = QThreadPool.globalInstance()
+        # Bumped on every resize; only the latest decode is allowed to paint
+        self._decode_generation = 0
+        self.image_label.setText("Loading …")
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if not self.image_path.exists():
             return
-        image = Image.open(self.image_path)
         width, height = self.image_label.size().toTuple()
-        ratio = min(width / image.width, height / image.height)
-        resized_width = int(ratio * image.width)
-        resized_height = int(ratio * image.height)
-        resized_image = image.resize(
-            size=(resized_width, resized_height),
-            resample=Image.Resampling.BICUBIC,
+        if width <= 0 or height <= 0:
+            return
+        self._decode_generation += 1
+        maker = LargeImageMaker(
+            image_path=self.image_path,
+            width=width,
+            height=height,
+            generation=self._decode_generation,
         )
-        self.image_label.setPixmap(image_to_pixmap(resized_image))
+        maker.signals.finished.connect(self.on_image_decoded)
+        self._threadpool.start(maker)
+
+    @Slot(int, QImage)
+    def on_image_decoded(self, generation: int, qimage: QImage):
+        if generation != self._decode_generation:
+            return  # a newer resize superseded this decode; drop it
+        self.image_label.setPixmap(QPixmap.fromImage(qimage))
 
 
 class ThumbnailSignals(QObject):

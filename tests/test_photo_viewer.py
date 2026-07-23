@@ -6,6 +6,8 @@ from PySide6.QtCore import Qt
 from lib.command import NoModifier
 from lib.photo_viewer import PhotoViewer
 from lib.view.single_view import SingleView
+from lib.view.empty_view import EmptyView
+from lib.view.loading_view import LoadingView
 from tests.fixtures import tmp_image_dir, tmp_images
 
 
@@ -111,16 +113,24 @@ class TestPhotoViewer:
     def test_load_path_with_file(self, qtbot, tmp_image_dir, tmp_images):
         viewer = PhotoViewer(tmp_images[1])
         qtbot.addWidget(viewer)
-        assert isinstance(viewer.centralWidget(), SingleView)
+        # Loading is deferred to the event loop; a LoadingView shows first
+        assert isinstance(viewer.centralWidget(), LoadingView)
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), SingleView))
 
     def test_load_path_with_directory(self, qtbot, tmp_image_dir, tmp_images):
         viewer = PhotoViewer(tmp_image_dir)
         qtbot.addWidget(viewer)
-        assert isinstance(viewer.centralWidget(), SingleView)
+        assert isinstance(viewer.centralWidget(), LoadingView)
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), SingleView))
 
-    def test_load_path_raises_for_empty_directory(self, qtbot, tmp_image_dir):
-        with pytest.raises(ValueError, match="is empty"):
-            PhotoViewer(tmp_image_dir)
+    def test_load_path_empty_directory_shows_empty_view(
+        self,
+        qtbot,
+        tmp_image_dir,
+    ):
+        viewer = PhotoViewer(tmp_image_dir)
+        qtbot.addWidget(viewer)
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), EmptyView))
 
     def test_resize_with_help_overlay(self, qtbot, tmp_image_dir, tmp_images):
         viewer = PhotoViewer(tmp_image_dir)
@@ -142,6 +152,8 @@ class TestPhotoViewer:
         viewer.show()
         qtbot.waitExposed(viewer)
         qtbot.waitActive(viewer)
+        # With nothing opened, the loading view falls back to the empty view
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), EmptyView))
 
         with patch(
             "lib.photo_viewer.QFileDialog.getExistingDirectory",
@@ -150,6 +162,4 @@ class TestPhotoViewer:
             qtbot.keyClick(viewer, Qt.Key.Key_O)
 
         # Should still be the EmptyView since dialog was cancelled
-        from lib.view.empty_view import EmptyView
-
         assert isinstance(viewer.centralWidget(), EmptyView)

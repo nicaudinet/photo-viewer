@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from lib.command import Command, NoModifier, handle_key_event
 
@@ -16,9 +16,15 @@ from lib.help_overlay import HelpOverlay
 from lib.view.wall_view import WallView
 from lib.view.single_view import SingleView
 from lib.view.empty_view import EmptyView
+from lib.view.loading_view import LoadingView
 
 
 class PhotoViewer(QMainWindow):
+
+    # How long to keep the (quiet) loading view before falling back to the
+    # empty view when nothing was opened. Gives a macOS open event that lands
+    # just after launch a chance to arrive without an EmptyView flash first.
+    EMPTY_FALLBACK_MS: int = 200
 
     def __init__(self, filepath: Optional[Path]):
 
@@ -27,17 +33,34 @@ class PhotoViewer(QMainWindow):
         self.setWindowTitle("Photo Viewer")
         self.setGeometry(100, 100, 800, 600)
 
+        self.help_overlay = None
+
         ###########
         # Widgets #
         ###########
 
-        central_widget = EmptyView(self)
-        self.setCentralWidget(central_widget)
-
-        self.help_overlay = None
+        # The loading view is always the first view: opening from Finder must
+        # not flash the empty view first. Its indicator is delayed, so if we
+        # snap straight to the empty view (nothing opened) there is no noise.
+        loading_view = LoadingView(self)
+        self.setCentralWidget(loading_view)
 
         if filepath:
             self.load_path(filepath)
+        else:
+            # No path yet — it may still arrive as a macOS open event. Wait
+            # briefly, then fall back to the empty view if nothing loaded.
+            QTimer.singleShot(
+                self.EMPTY_FALLBACK_MS,
+                self,
+                lambda: self._fallback_to_empty(loading_view),
+            )
+
+    def _fallback_to_empty(self, loading_view: QWidget) -> None:
+        # Only act if we are still sitting on the original loading view; a
+        # load (or a direct view swap) since then must not be clobbered.
+        if self.centralWidget() is loading_view:
+            self.swap_view(EmptyView(self))
 
     ###########
     # Actions #
@@ -155,6 +178,15 @@ class PhotoViewer(QMainWindow):
             return load_image_state(Path(image_dir))
 
     def load_path(self, path: Path) -> None:
+        # Show the loading view immediately, then do the actual (potentially
+        # slow) directory scan and decode on the next event-loop tick so the
+        # window paints a frame first instead of freezing on launch. Reuse the
+        # current loading view when there is one (e.g. straight after launch).
+        if not isinstance(self.centralWidget(), LoadingView):
+            self.swap_view(LoadingView(self))
+        QTimer.singleShot(0, lambda: self._load_path(path))
+
+    def _load_path(self, path: Path) -> None:
         if path.is_file():
             filedir = path.parent
             image_state = load_image_state(filedir)
@@ -163,5 +195,7 @@ class PhotoViewer(QMainWindow):
         else:
             image_state = load_image_state(path)
             if image_state == None:
-                raise ValueError(f"Directory {path} is empty")
+                # Nothing to show — fall back to the "nothing open" state
+                self.swap_view(EmptyView(self))
+                return
         self.swap_to_single_view(image_state)

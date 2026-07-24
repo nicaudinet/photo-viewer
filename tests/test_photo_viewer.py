@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from lib.command import NoModifier
 from lib.photo_viewer import PhotoViewer
 from lib.view.single_view import SingleView
+from lib.view.wall_view import WallView
 from lib.view.empty_view import EmptyView
 from lib.view.loading_view import LoadingView
 from tests.fixtures import tmp_image_dir, tmp_images
@@ -92,7 +93,7 @@ class TestPhotoViewer:
             dir="/Users/audinet/Pictures/Camera/2025 China/Favourites",
         )
 
-    def test_open_directory_swaps_to_single_view(
+    def test_open_directory_swaps_to_wall_view(
         self,
         qtbot,
         tmp_image_dir,
@@ -108,7 +109,7 @@ class TestPhotoViewer:
             return_value=str(tmp_image_dir),
         ):
             qtbot.keyClick(viewer, Qt.Key.Key_O)
-        assert isinstance(viewer.centralWidget(), SingleView)
+        assert isinstance(viewer.centralWidget(), WallView)
 
     def test_load_path_with_file(self, qtbot, tmp_image_dir, tmp_images):
         viewer = PhotoViewer(tmp_images[1])
@@ -121,7 +122,20 @@ class TestPhotoViewer:
         viewer = PhotoViewer(tmp_image_dir)
         qtbot.addWidget(viewer)
         assert isinstance(viewer.centralWidget(), LoadingView)
-        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), SingleView))
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), WallView))
+
+    def test_load_path_unsupported_file_shows_empty_view(
+        self,
+        qtbot,
+        tmp_image_dir,
+    ):
+        # An unsupported file whose directory has no supported images must not
+        # crash: fall back to the empty view instead of asserting.
+        unsupported = tmp_image_dir / "photo.heic"
+        unsupported.write_bytes(b"not really an image")
+        viewer = PhotoViewer(unsupported)
+        qtbot.addWidget(viewer)
+        qtbot.waitUntil(lambda: isinstance(viewer.centralWidget(), EmptyView))
 
     def test_load_path_empty_directory_shows_empty_view(
         self,

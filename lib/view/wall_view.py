@@ -88,7 +88,10 @@ class MasonryWall(QWidget):
 
         column_width = Thumbnail.THUMBNAIL_WIDTH
         item_width = self.SPACING + column_width
-        column_count = (self.width() - self.SPACING) // item_width
+        # Always keep at least one column: an early/narrow resize can make the
+        # raw count 0, which would leave column_heights empty and blow up the
+        # min() below.
+        column_count = max(1, (self.width() - self.SPACING) // item_width)
         column_heights = [self.SPACING] * column_count
         left_padding = (self.width() - column_count * item_width) // 2
 

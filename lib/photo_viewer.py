@@ -93,7 +93,7 @@ class PhotoViewer(QMainWindow):
     def action_open_directory(self):
         image_state = self.choose_directory()
         if image_state:
-            self.swap_to_single_view(image_state)
+            self.swap_to_wall_view(image_state)
 
     ############
     # Commands #
@@ -188,14 +188,21 @@ class PhotoViewer(QMainWindow):
 
     def _load_path(self, path: Path) -> None:
         if path.is_file():
+            # A specific file was opened (e.g. from Finder): show it directly.
+            # load_image_state returns None when the parent has no supported
+            # images (e.g. the file is an unsupported type like HEIC).
             filedir = path.parent
             image_state = load_image_state(filedir)
-            assert not image_state == None
+            if image_state is None:
+                self.swap_view(EmptyView(self))
+                return
             image_state.image_paths.goto_value(path)
+            self.swap_to_single_view(image_state)
         else:
+            # A directory was opened: show the wall of all its images.
             image_state = load_image_state(path)
-            if image_state == None:
+            if image_state is None:
                 # Nothing to show — fall back to the "nothing open" state
                 self.swap_view(EmptyView(self))
                 return
-        self.swap_to_single_view(image_state)
+            self.swap_to_wall_view(image_state)

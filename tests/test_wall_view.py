@@ -58,6 +58,17 @@ class TestWallViewThumbnailClick:
 
 class TestWallViewBuildWallIcons:
 
+    def test_build_wall_narrow_width_does_not_crash(
+        self,
+        wall_view,
+    ):
+        # A very narrow width makes the raw column count 0; build_wall must
+        # still keep at least one column instead of crashing on min([]).
+        masonry_wall = wall_view.centralWidget().masonry_wall
+        masonry_wall.resize(1, 600)
+        min_height = masonry_wall.build_wall()
+        assert min_height >= masonry_wall.SPACING
+
     def test_build_wall_shows_favourite_icon(
         self,
         wall_view,

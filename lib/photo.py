@@ -266,15 +266,17 @@ class ThumbnailSignals(QObject):
 
 class ThumbnailMaker(QRunnable):
 
-    def __init__(self, image_path: Path, width: int, height: int):
+    def __init__(self, image_path: Path, width: int):
         super().__init__()
         self.image_path = image_path
-        self.size = (width, height)
+        self.width = width
         self.signals = ThumbnailSignals()
 
     def run(self):
         image = Image.open(self.image_path)
-        image.thumbnail(self.size, Image.Resampling.BILINEAR)
+        aspect_ratio = image.height / image.width
+        thumbnail_height = int(aspect_ratio * self.width)
+        image.thumbnail((self.width, thumbnail_height), Image.Resampling.BILINEAR)
         pixmap = image_to_pixmap(image)
         self.signals.finished.emit(pixmap)
 
@@ -290,6 +292,7 @@ class Thumbnail(Photo):
         to_delete: bool,
         index: int,
         click_callback: Callable[[int], None],
+        on_ready: Callable[[], None],
         parent,
     ):
 
@@ -306,6 +309,7 @@ class Thumbnail(Photo):
 
         self.index: int = index
         self.click_callback: Callable = click_callback
+        self.on_ready: Callable[[], None] = on_ready
 
         ########
         # Init #
@@ -315,23 +319,25 @@ class Thumbnail(Photo):
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        image = Image.open(self.image_path)
-        aspect_ratio = image.height / image.width
-        thumbnail_height = int(aspect_ratio * self.THUMBNAIL_WIDTH)
-        self.setFixedSize(self.THUMBNAIL_WIDTH, thumbnail_height)
+        # Placeholder size until the worker decodes the image and reports its
+        # real aspect ratio. Reading the header here would open every file
+        # sequentially on the GUI thread; instead the worker computes the size.
+        self.setFixedSize(self.THUMBNAIL_WIDTH, self.THUMBNAIL_WIDTH)
 
     def make_thumbnail_async(self, threadpool: QThreadPool):
         maker = ThumbnailMaker(
             image_path=self.image_path,
-            width=self.width(),
-            height=self.height(),
+            width=self.THUMBNAIL_WIDTH,
         )
         maker.signals.finished.connect(self.on_thumbnail_made)
         threadpool.start(maker)
 
     @Slot(QPixmap)
     def on_thumbnail_made(self, pixmap: QPixmap):
+        # The decoded pixmap carries the true aspect ratio; adopt its size.
+        self.setFixedSize(pixmap.width(), pixmap.height())
         self.image_label.setPixmap(pixmap)
+        self.on_ready()
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:

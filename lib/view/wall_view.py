@@ -2,7 +2,7 @@ from typing import Callable, List
 
 from PySide6.QtWidgets import QWidget, QScrollArea
 from PySide6.QtGui import QResizeEvent
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtCore import Qt, QThreadPool, QTimer
 
 from lib.command import Command, NoModifier
 from lib.state import ImageState
@@ -31,6 +31,7 @@ class MasonryWall(QWidget):
         self.threadpool = QThreadPool.globalInstance()
         self.show_only_favourites = False
         self.show_only_to_delete = False
+        self._relayout_pending = False
 
         ########
         # Init #
@@ -47,6 +48,7 @@ class MasonryWall(QWidget):
                 to_delete=image_path in self.state.to_delete,
                 index=i,
                 click_callback=click_callback,
+                on_ready=self.request_relayout,
                 parent=self,
             )
             if i == self.state.image_paths.index:
@@ -66,6 +68,19 @@ class MasonryWall(QWidget):
     ####################
     # Helper Functions #
     ####################
+
+    def request_relayout(self):
+        # Thumbnails finish decoding on their own schedule and each reports a
+        # new size. Coalesce the resulting relayouts into one per event-loop
+        # pass so a burst of completions doesn't run build_wall O(N) times.
+        if self._relayout_pending:
+            return
+        self._relayout_pending = True
+        QTimer.singleShot(0, self._do_relayout)
+
+    def _do_relayout(self):
+        self._relayout_pending = False
+        self.setMinimumHeight(self.build_wall())
 
     def build_wall(self) -> int:
 

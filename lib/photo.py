@@ -234,6 +234,11 @@ class LargePhoto(Photo):
         self._threadpool = QThreadPool.globalInstance()
         # Bumped on every resize; only the latest decode is allowed to paint
         self._decode_generation = 0
+        # Strong refs to in-flight makers. QThreadPool.start() does not keep
+        # the Python wrapper (and its `signals`) alive, so without this the
+        # maker can be GC'd before the worker emits ("Signal source has been
+        # deleted"). Each maker removes itself once its decode finishes.
+        self._makers = set()
         self.image_label.setText("Loading …")
 
     def resizeEvent(self, event):
@@ -251,6 +256,10 @@ class LargePhoto(Photo):
             generation=self._decode_generation,
         )
         maker.signals.finished.connect(self.on_image_decoded)
+        self._makers.add(maker)
+        maker.signals.finished.connect(
+            lambda *_, m=maker: self._makers.discard(m)
+        )
         self._threadpool.start(maker)
 
     @Slot(int, QImage)
@@ -312,6 +321,8 @@ class Thumbnail(Photo):
         self.index: int = index
         self.click_callback: Callable = click_callback
         self.on_ready: Callable[[], None] = on_ready
+        # Holds the decode worker alive while it runs (see make_thumbnail_async)
+        self._maker = None
 
         ########
         # Init #
@@ -332,10 +343,17 @@ class Thumbnail(Photo):
             width=self.THUMBNAIL_WIDTH,
         )
         maker.signals.finished.connect(self.on_thumbnail_made)
+        # QThreadPool.start() owns the C++ runnable but does not keep this
+        # Python wrapper (nor its `signals` QObject) alive. Without a strong
+        # reference the maker can be garbage-collected before the worker
+        # thread emits, so `signals.finished.emit` fails with "Signal source
+        # has been deleted" and the thumbnail never loads. Hold it until done.
+        self._maker = maker
         threadpool.start(maker)
 
     @Slot(QImage)
     def on_thumbnail_made(self, qimage: QImage):
+        self._maker = None
         pixmap = QPixmap.fromImage(qimage)
         # The decoded pixmap carries the true aspect ratio; adopt its size.
         self.setFixedSize(pixmap.width(), pixmap.height())

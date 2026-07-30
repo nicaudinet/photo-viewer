@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from PIL import Image
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QMouseEvent
+from PySide6.QtGui import QImage, QPixmap, QMouseEvent
 
 from lib.photo import Photo, Thumbnail, ThumbnailMaker, image_to_pixmap
 
@@ -79,13 +79,15 @@ class TestPhotoIcons:
 
 class TestThumbnailMaker:
 
-    def test_run_emits_pixmap(self, qtbot, tmp_images):
-        maker = ThumbnailMaker(tmp_images[0], width=100, height=50)
+    def test_run_emits_qimage(self, qtbot, tmp_images):
+        # QPixmap must not be built off the GUI thread, so the worker emits a
+        # QImage; the GUI-thread slot converts it to a QPixmap.
+        maker = ThumbnailMaker(tmp_images[0], width=100)
         received = []
-        maker.signals.finished.connect(lambda px: received.append(px))
+        maker.signals.finished.connect(lambda img: received.append(img))
         maker.run()
         assert len(received) == 1
-        assert isinstance(received[0], QPixmap)
+        assert isinstance(received[0], QImage)
         assert not received[0].isNull()
 
 
@@ -99,6 +101,7 @@ class TestThumbnailClick:
             to_delete=False,
             index=42,
             click_callback=callback,
+            on_ready=MagicMock(),
             parent=None,
         )
         qtbot.addWidget(thumb)

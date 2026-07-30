@@ -261,7 +261,7 @@ class LargePhoto(Photo):
 
 
 class ThumbnailSignals(QObject):
-    finished = Signal(QPixmap)
+    finished = Signal(QImage)
 
 
 class ThumbnailMaker(QRunnable):
@@ -277,8 +277,10 @@ class ThumbnailMaker(QRunnable):
         aspect_ratio = image.height / image.width
         thumbnail_height = int(aspect_ratio * self.width)
         image.thumbnail((self.width, thumbnail_height), Image.Resampling.BILINEAR)
-        pixmap = image_to_pixmap(image)
-        self.signals.finished.emit(pixmap)
+        # QPixmap must not be built off the GUI thread; emit a QImage and let
+        # the GUI-thread slot convert it. (See LargeImageMaker.)
+        qimage = image_to_qimage(image)
+        self.signals.finished.emit(qimage)
 
 
 class Thumbnail(Photo):
@@ -332,8 +334,9 @@ class Thumbnail(Photo):
         maker.signals.finished.connect(self.on_thumbnail_made)
         threadpool.start(maker)
 
-    @Slot(QPixmap)
-    def on_thumbnail_made(self, pixmap: QPixmap):
+    @Slot(QImage)
+    def on_thumbnail_made(self, qimage: QImage):
+        pixmap = QPixmap.fromImage(qimage)
         # The decoded pixmap carries the true aspect ratio; adopt its size.
         self.setFixedSize(pixmap.width(), pixmap.height())
         self.image_label.setPixmap(pixmap)

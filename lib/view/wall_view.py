@@ -76,7 +76,10 @@ class MasonryWall(QWidget):
         if self._relayout_pending:
             return
         self._relayout_pending = True
-        QTimer.singleShot(0, self._do_relayout)
+        # Bind the deferred call to `self` as its context object: when the wall
+        # is swapped out (deleteLater'd), a still-pending relayout must NOT
+        # fire, or it would touch Thumbnail C++ objects already deleted with it.
+        QTimer.singleShot(0, self, self._do_relayout)
 
     def _do_relayout(self):
         self._relayout_pending = False

@@ -3,6 +3,13 @@
 //! Phase 0: just an empty window that opens. The roadmap (feature parity with
 //! the outgoing PySide6 app, phased migration) lives in `RUST_REWRITE_PLAN.md`.
 
+// Pure domain core (Phase 1). Not wired into the GUI until Phase 2, so allow
+// the temporarily-unused API surface.
+#[allow(dead_code)]
+mod library;
+#[allow(dead_code)]
+mod pointed_list;
+
 use iced::widget::{center, column, text};
 use iced::{Element, Size, Theme};
 

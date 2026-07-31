@@ -170,10 +170,16 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       OK (iced 0.13.1), binary launches a window without panic, flake evaluates.
       **Notes:** iced pinned to **0.13.1** (0.14.0 available — bump later). Nix requires files
       to be **git-tracked/staged** or crane can't see `Cargo.toml`. Icons not yet embedded.
-- [ ] **Phase 1 — Pure domain core.** Port `PointedList` + `Library`(ImageState) + persistence
-      + dir scan into a GUI-free module. Port the existing unit tests
-      (`test_pointed_list`, `test_state`, `test_command`) to Rust `#[test]`. Verify cache
-      files interop with the Python format.
+- [x] **Phase 1 — Pure domain core.** `src/pointed_list.rs` (`PointedList<T>`) + `src/library.rs`
+      (`Library` = ImageState, `load_library`, cache persistence, dir scan), GUI-free. 50 Rust
+      `#[test]`s ported from `test_pointed_list` + `test_state`, all green; clippy clean.
+      Cache stays byte-compatible with Python (`.photo-viewer/{favourites,to_delete}`,
+      newline-joined absolute paths, no trailing NL) — covered by a save→load round-trip test.
+      **Notes:** typed instead of Python asserts — `new` returns `Option` (empty list → None),
+      `goto` returns `bool`, mutations return `Result<_, LibraryError>` (`NotInLibrary` etc.).
+      Save sorts entries for deterministic output (order-irrelevant to the format). `test_command`
+      is Qt key-display (view layer) → deferred to a later phase, not domain. Modules wired into
+      `main.rs` under `#[allow(dead_code)]` until Phase 2 consumes them.
 - [ ] **Phase 2 — Single view MVP.** Load a dir/file, fit-to-window image, `←/→ h/l` nav,
       async decode (generation-tagged), `q` quit, `e` fullscreen, `?`/`Esc` help overlay.
 - [ ] **Phase 3 — Favourite / delete.** Toggle `f`/`d`, star+delete icon overlays, persistence,
@@ -192,7 +198,8 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
 ## 5. Parity checklist (verify before deleting Python)
 
 - [ ] All keybindings in §1 behave identically (incl. `h/l` aliases, Shift/Ctrl variants).
-- [ ] Cache format round-trips with existing `.photo-viewer/favourites` + `to_delete`.
+- [x] Cache format round-trips with existing `.photo-viewer/favourites` + `to_delete`.
+      (Phase 1 `save_then_load_round_trips` test; same newline-joined absolute-path format.)
 - [ ] Un-favourite also un-deletes; can't delete a favourite.
 - [ ] Rotate writes back to the source file; delete-all unlinks from disk.
 - [ ] Save-favourites copies (not moves), skips existing.

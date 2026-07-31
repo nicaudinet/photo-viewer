@@ -1,0 +1,22 @@
+[package]
+name = "photo-viewer"
+version = "0.1.0"
+edition = "2021"
+description = "A keyboard-driven photo viewer (Rust + iced rewrite)"
+
+[[bin]]
+name = "photo-viewer"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned to 0.13 for stability/docs during the rewrite; bump to 0.14.x later.
+# `image` feature: decode PNG/JPEG into iced image handles.
+# `tokio` feature: async runtime for off-thread decode Tasks.
+iced = { version = "0.13", features = ["image", "tokio"] }
+
+[profile.dev]
+# iced pulls a big dependency tree; a little opt keeps debug runs snappy.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

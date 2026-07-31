@@ -7,3 +7,6 @@ tests/__init__.py
 .claude
 .coverage
 /result
+
+# Rust
+/target

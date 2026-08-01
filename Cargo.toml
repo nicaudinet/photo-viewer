@@ -13,6 +13,10 @@ path = "src/main.rs"
 # `image` feature: decode PNG/JPEG into iced image handles.
 # `tokio` feature: async runtime for off-thread decode Tasks.
 iced = { version = "0.13", features = ["image", "tokio"] }
+# Decode PNG/JPEG to RGBA off the GUI thread (fed into an iced image Handle).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# spawn_blocking for CPU-bound decode without stalling the async runtime.
+tokio = { version = "1", features = ["rt"] }
 
 [profile.dev]
 # iced pulls a big dependency tree; a little opt keeps debug runs snappy.

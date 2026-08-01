@@ -180,8 +180,18 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       Save sorts entries for deterministic output (order-irrelevant to the format). `test_command`
       is Qt key-display (view layer) → deferred to a later phase, not domain. Modules wired into
       `main.rs` under `#[allow(dead_code)]` until Phase 2 consumes them.
-- [ ] **Phase 2 — Single view MVP.** Load a dir/file, fit-to-window image, `←/→ h/l` nav,
-      async decode (generation-tagged), `q` quit, `e` fullscreen, `?`/`Esc` help overlay.
+- [x] **Phase 2 — Single view MVP.** `src/main.rs` now a real Elm app: argv path opened
+      via `App::open` (file → parent dir + `goto_value`; dir → single view; no images → empty
+      view), fit-to-window `image(Handle)` with `ContentFit::Contain`, `←/→ h/l` nav, `q` quit,
+      `e` fullscreen (`window::change_mode`), `?`/`Esc` help overlay (via `stack!`). Decode runs
+      on `tokio::spawn_blocking` inside a `Task::perform`, returns an RGBA `image::Handle`
+      (plain data, safe off-thread — the Qt QPixmap footgun is gone), tagged with a `generation`
+      counter so a superseded nav's `LargeDecoded` is dropped. Keys via `keyboard::on_key_press`
+      subscription. Added deps: `image` 0.25 (png+jpeg), `tokio` (rt). Build + clippy clean,
+      50 domain tests green, smoke-ran against `icons/` (window opens, decodes, no panic).
+      **Notes:** Python opens a *directory* in the wall view; wall view is Phase 4, so for now a
+      dir opens single view. No LoadingView yet (shows "Loading…" text while first decode runs);
+      real LoadingView timing is Phase 5. `o` open-dir picker deferred to Phase 5 (needs `rfd`).
 - [ ] **Phase 3 — Favourite / delete.** Toggle `f`/`d`, star+delete icon overlays, persistence,
       `Ctrl+D` delete-all w/ in-app confirm overlay, `Ctrl+F` save-favourites via `rfd` dir picker.
 - [ ] **Phase 4 — Wall view.** Async thumbnails, masonry columns in `scrollable`, selection

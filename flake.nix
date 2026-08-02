@@ -57,8 +57,17 @@
             freetype
           ];
 
+          # Keep Rust sources plus the icons we embed via include_bytes!;
+          # crane's default cleanCargoSource would strip the .png files.
+          src = lib.cleanSourceWith {
+            src = ./.;
+            filter = path: type:
+              (lib.hasSuffix ".png" path) || (craneLib.filterCargoSources path type);
+            name = "source";
+          };
+
           commonArgs = {
-            src = craneLib.cleanCargoSource ./.;
+            inherit src;
             strictDeps = true;
             nativeBuildInputs = [ pkgs.pkg-config ];
             buildInputs = lib.optionals stdenv.isLinux runtimeLibs;

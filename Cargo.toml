@@ -32,6 +32,10 @@ objc2-foundation = { version = "0.3", features = [
     "NSString",
     "NSData",
     "NSURL",
+    # Observe NSApplicationDidFinishLaunchingNotification so we install the
+    # Apple Event handler *after* AppKit installs (and would otherwise clobber)
+    # its own.
+    "NSNotification",
     # Pulls the Carbon AEEventClass/AEKeyword types + gated setEventHandler API.
     "objc2-core-services",
 ] }

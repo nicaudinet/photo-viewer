@@ -6,6 +6,16 @@
 //! shared `NSAppleEventManager` that buffers opened paths into a queue; the iced
 //! app drains it via `take_open_files` on a timer subscription. Mirrors the
 //! Python `PhotoViewerApplication.event` + `_pending_path` buffering.
+//!
+//! Timing gotcha: `-[NSApplication finishLaunching]` installs AppKit's own
+//! `odoc` handler, which overwrites any we set beforehand — so registering in
+//! `main()` (before winit runs the app) silently loses the event, and the open
+//! Apple Event times out ("The document could not be opened"). We therefore
+//! defer the `NSAppleEventManager` registration to
+//! `NSApplicationDidFinishLaunchingNotification`, which fires *after* AppKit's
+//! own install, so ours wins. The pending launch-time `odoc` is only dispatched
+//! on the next run-loop pass, after that notification, so this also catches the
+//! double-click-to-launch case.
 
 use std::path::PathBuf;
 
@@ -38,7 +48,7 @@ mod macos {
     use objc2::runtime::NSObject;
     use objc2::{define_class, msg_send, sel, AnyThread};
     use objc2_foundation::{
-        NSAppleEventDescriptor, NSAppleEventManager, NSData, NSString, NSURL,
+        NSAppleEventDescriptor, NSAppleEventManager, NSData, NSNotificationCenter, NSString, NSURL,
     };
 
     /// FourCharCode (OSType) from a 4-byte tag, e.g. `b"odoc"`.
@@ -79,6 +89,13 @@ mod macos {
                     }
                 }
             }
+
+            // Fires after AppKit has installed its own odoc handler in
+            // finishLaunching; now safe to register ours on top.
+            #[unsafe(method(applicationDidFinishLaunching:))]
+            fn application_did_finish_launching(&self, _note: &NSObject) {
+                self.register_apple_event_handler();
+            }
         }
     );
 
@@ -86,6 +103,21 @@ mod macos {
         fn new() -> Retained<Self> {
             let this = Self::alloc().set_ivars(());
             unsafe { msg_send![super(this), init] }
+        }
+
+        /// Register self as the shared manager's `kAEOpenDocuments` handler.
+        /// Must run *after* `NSApplication` finishLaunching, else AppKit's own
+        /// registration overwrites ours.
+        fn register_apple_event_handler(&self) {
+            let manager = NSAppleEventManager::sharedAppleEventManager();
+            unsafe {
+                manager.setEventHandler_andSelector_forEventClass_andEventID(
+                    self,
+                    sel!(handleAppleEvent:withReplyEvent:),
+                    K_CORE_EVENT_CLASS,
+                    K_AE_OPEN_DOCUMENTS,
+                );
+            }
         }
     }
 
@@ -133,15 +165,19 @@ mod macos {
 
     pub(super) fn install() {
         let handler = Handler::new();
-        let manager = NSAppleEventManager::sharedAppleEventManager();
-        // The manager keeps only a weak reference to the handler, so leak it to
-        // keep it alive for the whole process.
+
+        // Register the Apple Event handler only once AppKit has finished
+        // launching (see module docs): observe the notification and install
+        // from there. addObserver keeps only a weak reference to the observer,
+        // and setEventHandler likewise, so leak the handler to keep it alive
+        // for the whole process.
         unsafe {
-            manager.setEventHandler_andSelector_forEventClass_andEventID(
+            let center = NSNotificationCenter::defaultCenter();
+            center.addObserver_selector_name_object(
                 &handler,
-                sel!(handleAppleEvent:withReplyEvent:),
-                K_CORE_EVENT_CLASS,
-                K_AE_OPEN_DOCUMENTS,
+                sel!(applicationDidFinishLaunching:),
+                Some(&NSString::from_str("NSApplicationDidFinishLaunchingNotification")),
+                None,
             );
         }
         std::mem::forget(handler);

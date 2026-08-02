@@ -176,7 +176,7 @@
               png2icns "$app/Contents/Resources/photo-viewer.icns" \
                 icon_16.png icon_32.png icon_128.png icon_256.png icon_512.png
 
-              makeWrapper ${cli}/bin/photo-viewer "$app/Contents/MacOS/PhotoViewer"
+              makeWrapper ${viewer}/bin/photo-viewer "$app/Contents/MacOS/PhotoViewer"
             '';
           };
 

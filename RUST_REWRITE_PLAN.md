@@ -236,8 +236,27 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       `Task`s (added tokio `time` feature) — iced already drives that runtime. The macOS
       open-event that would feed the empty-fallback window is Phase 6; for now the fallback
       just reaches the empty view after argv-less launch.
-- [ ] **Phase 6 — Platform + packaging.** macOS Open-With spike (see hard spots), Linux
-      Wayland/HiDPI, `.app` bundle + `install-app` parity, embed icons.
+- [x] **Phase 6 — Platform + packaging.** macOS "Open With" / double-click: Finder delivers
+      the file as a `kAEOpenDocuments` Apple Event, not on argv, so `src/platform.rs` (macOS
+      only) registers a handler on the shared `NSAppleEventManager` via objc2 (`define_class!`
+      for `PVOpenFileHandler`), walks the event's direct-object list, coerces each item to
+      `typeFileURL`, and decodes it back to a path through `NSURL` (handles percent-decoding).
+      Opened paths land in a `Mutex<Vec<PathBuf>>` queue that the app drains on a 200ms timer
+      subscription (`Message::PollOpenFiles` → `open`), mirroring the Python `_pending_path`
+      buffer that also covers events arriving before the window exists. `.app` bundle +
+      `install-app` now wrap the Rust `viewer` binary (same `Info.plist` /
+      `CFBundleDocumentTypes` / `png2icns`); icons already embedded via `include_bytes!`
+      (Phase 3). Build + clippy clean, `nix build .#app .#viewer` green, 51 tests
+      (the new one builds a real `odoc` event and asserts the extracted path round-trips a
+      space through percent-decode).
+      **Notes:** the Apple Event *parsing* is unit-tested in-process, but OS *delivery*
+      (LaunchServices routing a Finder double-click / `open -a`) can't be tested headlessly
+      here — needs a manual `open -a` / Finder check after `nix run .#install-app`.
+      objc2-core-services feature pulled in for the `AEEventClass`/`AEKeyword` types + the
+      gated `setEventHandler` API. Linux Wayland/HiDPI needs no code: the Python `QT_*` env
+      hacks are Qt-specific; winit auto-detects Wayland + HiDPI, and the runtime graphics
+      libs are already handled by the flake (`LD_LIBRARY_PATH` in the devShell, `patchelf`
+      rpath in the package).
 - [ ] **Phase 7 — Cutover.** Delete `lib/` + Python flake bits, rewrite README, final test pass,
       confirm all keybindings match the table above.
 
@@ -252,8 +271,10 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
 - [x] Rotate writes back to the source file; delete-all unlinks from disk. (delete-all Phase 3; rotate Phase 5 `rotate_file`.)
 - [x] Save-favourites copies (not moves), skips existing. (Phase 1 domain; wired to `Cmd+F` in Phase 3.)
 - [ ] Circular nav wraps at both ends.
-- [ ] macOS double-click / "Open With" opens the file (or documented fallback).
-- [ ] `nix run`, `nix build .#app`, `nix run .#install-app`, `nix develop` all work.
+- [~] macOS double-click / "Open With" opens the file. (Apple Event handler wired +
+      parsing unit-tested in Phase 6; OS delivery pending a manual `open -a` / Finder check.)
+- [x] `nix run`, `nix build .#app`, `nix run .#install-app`, `nix develop` all work.
+      (`.app` + `install-app` wrap the Rust binary as of Phase 6.)
 
 ## 6. Open decisions (resolve as encountered)
 - iced version pin (0.14.x) — confirm masonry/`responsive` API shape on that version.

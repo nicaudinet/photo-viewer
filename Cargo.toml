@@ -22,6 +22,20 @@ tokio = { version = "1", features = ["rt", "time"] }
 # Native directory picker (save-favourites destination).
 rfd = "0.15"
 
+# macOS "Open With" / double-click: Finder delivers the opened file as an Apple
+# Event, not on argv. We register an NSAppleEventManager handler for it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSAppleEventManager",
+    "NSAppleEventDescriptor",
+    "NSString",
+    "NSData",
+    "NSURL",
+    # Pulls the Carbon AEEventClass/AEKeyword types + gated setEventHandler API.
+    "objc2-core-services",
+] }
+
 [profile.dev]
 # iced pulls a big dependency tree; a little opt keeps debug runs snappy.
 opt-level = 1

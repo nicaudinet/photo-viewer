@@ -17,6 +17,7 @@
 // still-unused surface for now.
 #[allow(dead_code)]
 mod library;
+mod platform;
 #[allow(dead_code)]
 mod pointed_list;
 
@@ -58,6 +59,10 @@ const INDICATOR_DELAY_MS: u64 = 250;
 const EMPTY_FALLBACK_MS: u64 = 200;
 
 pub fn main() -> iced::Result {
+    // Register the macOS open-file handler before the event loop starts, so a
+    // launch-time "Open With" event is caught (no-op off macOS).
+    platform::install_open_file_handler();
+
     iced::application(App::title, App::update, App::view)
         .subscription(App::subscription)
         .theme(|_app| Theme::Dark)
@@ -141,6 +146,8 @@ enum Message {
     /// `o`: pick a directory to open.
     OpenDir,
     OpenDirPicked(Option<PathBuf>),
+    /// Timer tick: drain any paths the platform delivered (macOS "Open With").
+    PollOpenFiles,
     /// The delayed indicator fired; reveal it if this load is still current.
     RevealIndicator {
         generation: u64,
@@ -514,6 +521,13 @@ impl App {
             ),
             Message::OpenDirPicked(Some(dir)) => self.open(dir),
             Message::OpenDirPicked(None) => Task::none(),
+            Message::PollOpenFiles => {
+                // Finder may hand us several files; open the last (single window).
+                match platform::take_open_files().pop() {
+                    Some(path) => self.open(path),
+                    None => Task::none(),
+                }
+            }
             Message::RevealIndicator { generation } => {
                 if generation == self.generation {
                     self.indicator = true;
@@ -602,7 +616,7 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        keyboard::on_key_press(|key, modifiers| {
+        let keys = keyboard::on_key_press(|key, modifiers| {
             let cmd = modifiers.command();
             match key.as_ref() {
                 keyboard::Key::Named(Named::ArrowRight) => Some(Message::Next),
@@ -629,7 +643,19 @@ impl App {
                 keyboard::Key::Character("n") => Some(Message::ConfirmNo),
                 _ => None,
             }
-        })
+        });
+
+        // macOS delivers "Open With" files as Apple Events off the main input
+        // path; poll the buffer they land in. No such source elsewhere.
+        #[cfg(target_os = "macos")]
+        {
+            let poll = iced::time::every(Duration::from_millis(200)).map(|_| Message::PollOpenFiles);
+            Subscription::batch([keys, poll])
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            keys
+        }
     }
 
     fn view(&self) -> Element<'_, Message> {

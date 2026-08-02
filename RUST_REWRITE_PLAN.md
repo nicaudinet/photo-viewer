@@ -219,8 +219,23 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       `self.screen`. `WallFilter` is a 3-state enum (`All`/`Favourites`/`ToDelete`); re-pressing
       the active filter returns to `All`. Nav + `Cmd+F`/`Cmd+D` are gated to single view. Masonry
       recomputes each frame from state, so it self-heals as async thumbnails arrive.
-- [ ] **Phase 5 — Rotate + open + empty/loading.** `r`/`Shift+R` rotate+save to disk,
-      `o` open-dir picker, EmptyView, LoadingView with delayed indicator + fallback timing.
+- [x] **Phase 5 — Rotate + open + empty/loading.** `r` rotates the current image
+      anticlockwise, `Shift+R` clockwise, each re-encoding the file in place off-thread
+      (`rotate_file`: `image::open` → `rotate270`/`rotate90` → `save`, format from the
+      extension, matching PIL's lossy re-encode); on success the stale thumbnail is dropped
+      and the current image re-decoded. `o` runs a native dir picker (`rfd`) then `open`.
+      `Screen` gained `Loading`/`Empty` (view now switches on `screen`, not on `library`
+      being `None`). Startup with no path sits on a **quiet** loading view: a 250ms timer
+      (`INDICATOR_DELAY_MS`) reveals the "Loading …" indicator, a 200ms timer
+      (`EMPTY_FALLBACK_MS`) falls back to the empty view — so a fast/absent load flashes
+      nothing. Both timers, plus the single-view decode indicator, are generation-tagged so
+      a superseded load can't reveal or clobber. Build + clippy clean, 50 tests green,
+      smoke-ran (wall opens, no panic).
+      **Notes:** `Shift+R` matched both `Character("R")` and `Character("r")` + shift, since
+      layouts differ on which they deliver. Delay timers are one-shot `tokio::time::sleep`
+      `Task`s (added tokio `time` feature) — iced already drives that runtime. The macOS
+      open-event that would feed the empty-fallback window is Phase 6; for now the fallback
+      just reaches the empty view after argv-less launch.
 - [ ] **Phase 6 — Platform + packaging.** macOS Open-With spike (see hard spots), Linux
       Wayland/HiDPI, `.app` bundle + `install-app` parity, embed icons.
 - [ ] **Phase 7 — Cutover.** Delete `lib/` + Python flake bits, rewrite README, final test pass,
@@ -234,7 +249,7 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
 - [x] Cache format round-trips with existing `.photo-viewer/favourites` + `to_delete`.
       (Phase 1 `save_then_load_round_trips` test; same newline-joined absolute-path format.)
 - [x] Un-favourite also un-deletes; can't delete a favourite. (Phase 3 `toggle_favourite`/`toggle_delete`.)
-- [ ] Rotate writes back to the source file; delete-all unlinks from disk. (delete-all done Phase 3; rotate Phase 5.)
+- [x] Rotate writes back to the source file; delete-all unlinks from disk. (delete-all Phase 3; rotate Phase 5 `rotate_file`.)
 - [x] Save-favourites copies (not moves), skips existing. (Phase 1 domain; wired to `Cmd+F` in Phase 3.)
 - [ ] Circular nav wraps at both ends.
 - [ ] macOS double-click / "Open With" opens the file (or documented fallback).

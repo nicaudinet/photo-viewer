@@ -1,15 +1,17 @@
 //! PhotoViewer — Rust + iced rewrite.
 //!
-//! Phase 4: adds the wall (masonry) view alongside the single view.
-//! - Single view: fit-to-window decode, `←/→ h/l` nav, `f`/`d` favourite/delete
-//!   toggles + icon overlays, `Cmd+D` delete-all (confirm overlay), `Cmd+F`
-//!   save-favourites.
+//! Phase 5: rotate, open-dir picker, and the loading/empty views.
+//! - Single view: fit-to-window decode, `←/→ h/l` nav, `r`/`Shift+R` rotate
+//!   (writes the file to disk), `f`/`d` favourite/delete toggles + icon
+//!   overlays, `Cmd+D` delete-all (confirm overlay), `Cmd+F` save-favourites.
 //! - Wall view: async 300px thumbnails laid out shortest-column masonry in a
 //!   vertical scroll, current image highlighted, click a thumbnail to open it,
 //!   `f`/`d` filter to favourites/to-delete only.
-//! - `w` toggles between the two; a directory opens in wall view, a file in
-//!   single view. `q` quit, `e` fullscreen, `?`/`Esc` help. Roadmap in
-//!   `RUST_REWRITE_PLAN.md`.
+//! - `w` toggles between the two; `o` opens a directory (native picker); a
+//!   directory opens in wall view, a file in single view.
+//! - Loading view (quiet, indicator revealed only after 250ms) then a fallback
+//!   to the empty view if nothing loads. `q` quit, `e` fullscreen, `?`/`Esc`
+//!   help. Roadmap in `RUST_REWRITE_PLAN.md`.
 
 // Pure domain core (Phase 1). Later phases consume more of its API; allow the
 // still-unused surface for now.
@@ -20,6 +22,7 @@ mod pointed_list;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use iced::alignment::{Horizontal, Vertical};
 use iced::keyboard;
@@ -46,6 +49,14 @@ const ICON_MARGIN: f32 = 10.0;
 const THUMB_WIDTH: u32 = 300;
 const WALL_SPACING: f32 = 20.0;
 
+/// Reveal the "Loading …" indicator only after this long, so a fast load shows
+/// no flash of it (Python `LoadingView.INDICATOR_DELAY_MS`).
+const INDICATOR_DELAY_MS: u64 = 250;
+/// When launched with no path, sit quietly on the loading view this long (a
+/// macOS open event may still arrive), then fall back to the empty view
+/// (Python `PhotoViewer.EMPTY_FALLBACK_MS`).
+const EMPTY_FALLBACK_MS: u64 = 200;
+
 pub fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
         .subscription(App::subscription)
@@ -54,9 +65,14 @@ pub fn main() -> iced::Result {
         .run_with(App::new)
 }
 
-/// Which view is on screen. `Empty` is implied by `library == None`.
+/// Which view is on screen.
+///
+/// `Loading` is the quiet startup/opening state; it falls back to `Empty` if
+/// nothing loads. `Single`/`Wall` are only reachable with `library == Some`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
+    Loading,
+    Empty,
     Single,
     Wall,
 }
@@ -82,8 +98,12 @@ struct App {
     screen: Screen,
     /// Latest fit-to-window decode for the current path (single view).
     large: Option<image::Handle>,
-    /// Bumped on every navigation; a stale-tagged `LargeDecoded` is dropped.
+    /// Bumped on every load (nav / open / rotate); tags `LargeDecoded`,
+    /// `RevealIndicator`, and `EmptyFallback` so superseded ones are dropped.
     generation: u64,
+    /// Whether the "Loading …" indicator is currently revealed. Set true by a
+    /// `RevealIndicator` that survives the delay; reset false when a load starts.
+    indicator: bool,
     /// Decoded thumbnails, keyed by path (wall view). Decoded once, then cached.
     thumbs: HashMap<PathBuf, ThumbState>,
     wall_filter: WallFilter,
@@ -109,6 +129,26 @@ enum Message {
     /// `d`: delete toggle (single) or to-delete filter (wall).
     KeyD,
     ToggleWall,
+    /// `r`: rotate the current image anticlockwise, writing it to disk.
+    RotateAnticlockwise,
+    /// `Shift+R`: rotate the current image clockwise, writing it to disk.
+    RotateClockwise,
+    /// Result of a rotate: on success, re-decode the (now rotated) file.
+    Rotated {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
+    /// `o`: pick a directory to open.
+    OpenDir,
+    OpenDirPicked(Option<PathBuf>),
+    /// The delayed indicator fired; reveal it if this load is still current.
+    RevealIndicator {
+        generation: u64,
+    },
+    /// The no-path startup timer fired; drop to the empty view if still loading.
+    EmptyFallback {
+        generation: u64,
+    },
     ThumbClicked(usize),
     ThumbDecoded {
         path: PathBuf,
@@ -130,6 +170,8 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2190} / h", "Previous image"),
     ("\u{2192} / l", "Next image"),
     ("w", "Wall / single (toggle)"),
+    ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
+    ("o", "Open directory"),
     ("f", "Favourite / favourites filter"),
     ("\u{2318}F", "Save favourites"),
     ("d", "Mark to delete / to-delete filter"),
@@ -144,9 +186,10 @@ impl App {
     fn new() -> (App, Task<Message>) {
         let mut app = App {
             library: None,
-            screen: Screen::Single,
+            screen: Screen::Loading,
             large: None,
             generation: 0,
+            indicator: false,
             thumbs: HashMap::new(),
             wall_filter: WallFilter::All,
             help_open: false,
@@ -157,7 +200,17 @@ impl App {
         };
         let task = match std::env::args().nth(1) {
             Some(arg) => app.open(PathBuf::from(arg)),
-            None => Task::none(),
+            // No path yet — sit on the (quiet) loading view. Reveal the
+            // indicator after the delay, and fall back to empty if nothing
+            // loads by then (a macOS open event may still arrive in Phase 6).
+            None => {
+                app.generation += 1;
+                let gen = app.generation;
+                Task::batch(vec![
+                    sleep_then(INDICATOR_DELAY_MS, Message::RevealIndicator { generation: gen }),
+                    sleep_then(EMPTY_FALLBACK_MS, Message::EmptyFallback { generation: gen }),
+                ])
+            }
         };
         (app, task)
     }
@@ -192,11 +245,13 @@ impl App {
             }
             Ok(None) => {
                 self.library = None;
+                self.screen = Screen::Empty;
                 Task::none()
             }
             Err(e) => {
                 eprintln!("Failed to load {}: {e}", dir.display());
                 self.library = None;
+                self.screen = Screen::Empty;
                 Task::none()
             }
         }
@@ -212,14 +267,18 @@ impl App {
         let generation = self.generation;
         let path = lib.current().clone();
         self.large = None;
-        Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || decode_large(&path))
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            move |result| Message::LargeDecoded { generation, result },
-        )
+        self.indicator = false;
+        Task::batch(vec![
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || decode_large(&path))
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                },
+                move |result| Message::LargeDecoded { generation, result },
+            ),
+            sleep_then(INDICATOR_DELAY_MS, Message::RevealIndicator { generation }),
+        ])
     }
 
     /// Decode (once) every thumbnail not already cached.
@@ -311,10 +370,35 @@ impl App {
         if lib.paths.is_empty() {
             self.library = None;
             self.large = None;
+            self.screen = Screen::Empty;
             Task::none()
         } else {
             self.decode_current()
         }
+    }
+
+    /// Rotate the current image 90° (clockwise if `clockwise`, else anti-),
+    /// writing the result back to its file off-thread. Only in single view.
+    fn rotate(&mut self, clockwise: bool) -> Task<Message> {
+        if self.screen != Screen::Single {
+            return Task::none();
+        }
+        let Some(lib) = &self.library else {
+            return Task::none();
+        };
+        let path = lib.current().clone();
+        let key = path.clone();
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || rotate_file(&path, clockwise))
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()))
+            },
+            move |result| Message::Rotated {
+                path: key.clone(),
+                result,
+            },
+        )
     }
 
     fn title(&self) -> String {
@@ -370,6 +454,7 @@ impl App {
                     Screen::Wall => {
                         self.wall_filter = toggle_filter(self.wall_filter, WallFilter::Favourites);
                     }
+                    Screen::Loading | Screen::Empty => {}
                 }
                 Task::none()
             }
@@ -379,6 +464,7 @@ impl App {
                     Screen::Wall => {
                         self.wall_filter = toggle_filter(self.wall_filter, WallFilter::ToDelete);
                     }
+                    Screen::Loading | Screen::Empty => {}
                 }
                 Task::none()
             }
@@ -399,7 +485,46 @@ impl App {
                             Task::none()
                         }
                     }
+                    Screen::Loading | Screen::Empty => Task::none(),
                 }
+            }
+            Message::RotateAnticlockwise => self.rotate(false),
+            Message::RotateClockwise => self.rotate(true),
+            Message::Rotated { path, result } => match result {
+                Ok(()) => {
+                    // The file changed on disk: drop its stale thumbnail and
+                    // re-decode the current image.
+                    self.thumbs.remove(&path);
+                    self.decode_current()
+                }
+                Err(e) => {
+                    eprintln!("Rotate failed: {e}");
+                    Task::none()
+                }
+            },
+            Message::OpenDir => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Select a directory to open")
+                        .pick_folder()
+                        .await
+                        .map(|handle| handle.path().to_path_buf())
+                },
+                Message::OpenDirPicked,
+            ),
+            Message::OpenDirPicked(Some(dir)) => self.open(dir),
+            Message::OpenDirPicked(None) => Task::none(),
+            Message::RevealIndicator { generation } => {
+                if generation == self.generation {
+                    self.indicator = true;
+                }
+                Task::none()
+            }
+            Message::EmptyFallback { generation } => {
+                if generation == self.generation && self.screen == Screen::Loading {
+                    self.screen = Screen::Empty;
+                }
+                Task::none()
             }
             Message::ThumbClicked(index) => {
                 if let Some(lib) = &mut self.library {
@@ -489,6 +614,12 @@ impl App {
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
+                keyboard::Key::Character("o") => Some(Message::OpenDir),
+                keyboard::Key::Character("R") => Some(Message::RotateClockwise),
+                keyboard::Key::Character("r") if modifiers.shift() => {
+                    Some(Message::RotateClockwise)
+                }
+                keyboard::Key::Character("r") => Some(Message::RotateAnticlockwise),
                 keyboard::Key::Character("?") => Some(Message::ToggleHelp),
                 keyboard::Key::Character("f") if cmd => Some(Message::SaveFavourites),
                 keyboard::Key::Character("f") => Some(Message::KeyF),
@@ -502,12 +633,11 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let content: Element<'_, Message> = match &self.library {
-            None => empty_view(),
-            Some(_) => match self.screen {
-                Screen::Single => self.single_view(),
-                Screen::Wall => self.wall_view(),
-            },
+        let content: Element<'_, Message> = match self.screen {
+            Screen::Loading => loading_view(self.indicator),
+            Screen::Empty => empty_view(),
+            Screen::Single => self.single_view(),
+            Screen::Wall => self.wall_view(),
         };
 
         let mut layers: Vec<Element<'_, Message>> = vec![content];
@@ -532,7 +662,7 @@ impl App {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
-            None => center(text("Loading\u{2026}").size(20)).into(),
+            None => loading_view(self.indicator),
         };
 
         let Some(lib) = &self.library else {
@@ -673,6 +803,39 @@ fn corner_icon(handle: image::Handle) -> Element<'static, Message> {
     .align_y(Vertical::Top)
     .padding(ICON_MARGIN)
     .into()
+}
+
+/// A `Task` that emits `msg` after `ms` milliseconds (delayed indicator, empty
+/// fallback). One-shot timer via the tokio runtime iced already drives.
+fn sleep_then(ms: u64, msg: Message) -> Task<Message> {
+    Task::perform(
+        async move { tokio::time::sleep(Duration::from_millis(ms)).await },
+        move |()| msg.clone(),
+    )
+}
+
+/// Rotate the image at `path` 90° and overwrite it, preserving its format (the
+/// destination extension picks the encoder). `clockwise` matches `Shift+R`; the
+/// anticlockwise case matches the Python `Image.rotate(90)`. Runs off-thread.
+fn rotate_file(path: &Path, clockwise: bool) -> Result<(), String> {
+    let img = ::image::open(path).map_err(|e| e.to_string())?;
+    let rotated = if clockwise {
+        img.rotate90()
+    } else {
+        img.rotate270()
+    };
+    rotated.save(path).map_err(|e| e.to_string())
+}
+
+/// The quiet loading view. The indicator text is shown only once revealed (after
+/// `INDICATOR_DELAY_MS`), so fast loads flash nothing.
+fn loading_view(show_indicator: bool) -> Element<'static, Message> {
+    let body: Element<'static, Message> = if show_indicator {
+        text("Loading \u{2026}").size(20).into()
+    } else {
+        iced::widget::Space::new(Length::Shrink, Length::Shrink).into()
+    };
+    center(body).into()
 }
 
 /// Decode + fit an image to window size later; here just full-res RGBA. Runs on

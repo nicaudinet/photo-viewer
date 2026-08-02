@@ -16,8 +16,9 @@ path = "src/main.rs"
 iced = { version = "0.13", features = ["image", "tokio", "lazy"] }
 # Decode PNG/JPEG to RGBA off the GUI thread (fed into an iced image Handle).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-# spawn_blocking for CPU-bound decode without stalling the async runtime.
-tokio = { version = "1", features = ["rt"] }
+# spawn_blocking for CPU-bound decode; time for the delayed loading indicator
+# and the empty-view fallback timer.
+tokio = { version = "1", features = ["rt", "time"] }
 # Native directory picker (save-favourites destination).
 rfd = "0.15"
 

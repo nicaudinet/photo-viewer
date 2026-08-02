@@ -12,7 +12,8 @@ path = "src/main.rs"
 # Pinned to 0.13 for stability/docs during the rewrite; bump to 0.14.x later.
 # `image` feature: decode PNG/JPEG into iced image handles.
 # `tokio` feature: async runtime for off-thread decode Tasks.
-iced = { version = "0.13", features = ["image", "tokio"] }
+# `lazy` gives the `responsive` widget (width-aware masonry layout in wall view).
+iced = { version = "0.13", features = ["image", "tokio", "lazy"] }
 # Decode PNG/JPEG to RGBA off the GUI thread (fed into an iced image Handle).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # spawn_blocking for CPU-bound decode without stalling the async runtime.

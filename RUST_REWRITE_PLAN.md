@@ -204,8 +204,21 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       (Qt maps Cmd→ControlModifier on mac). Favourite/delete toggles don't re-decode — the
       overlay is derived from library state each frame. `rfd` async picker marshals to the main
       thread itself; works from an iced `Task`.
-- [ ] **Phase 4 — Wall view.** Async thumbnails, masonry columns in `scrollable`, selection
-      highlight, click→single, `f`/`d` filter toggles, `w` swap both ways.
+- [x] **Phase 4 — Wall view.** Async 300px thumbnails (`decode_thumb`, cached in a
+      `HashMap<PathBuf, ThumbState>` keyed by path, decoded once via a `Task::batch`), laid out
+      **shortest-column masonry** (chose this over round-robin — we have each thumb's scaled
+      height, so it matches the Python wall) inside a vertical `scrollable`, columns centered,
+      ≥1 column floor, 20px spacing. Current image gets a 4px highlight border (a `button` style
+      capturing `selected`). Click a thumbnail → `goto(index)` + switch to single view. `f`/`d`
+      toggle the favourites / to-delete filter (icons hidden while a filter is active); `w` swaps
+      both ways. A directory now opens in wall view, a file in single view (the Phase-2 deferral).
+      Layout uses the `responsive` widget (added iced `lazy` feature). Build + clippy clean, 50
+      tests green, smoke-ran (dir → wall, thumbnails decode, no panic).
+      **Notes:** `f`/`d` are context-dependent, but `on_key_press`'s closure is `'static` and
+      can't see `self`, so they emit neutral `KeyF`/`KeyD` messages and `update` dispatches on
+      `self.screen`. `WallFilter` is a 3-state enum (`All`/`Favourites`/`ToDelete`); re-pressing
+      the active filter returns to `All`. Nav + `Cmd+F`/`Cmd+D` are gated to single view. Masonry
+      recomputes each frame from state, so it self-heals as async thumbnails arrive.
 - [ ] **Phase 5 — Rotate + open + empty/loading.** `r`/`Shift+R` rotate+save to disk,
       `o` open-dir picker, EmptyView, LoadingView with delayed indicator + fallback timing.
 - [ ] **Phase 6 — Platform + packaging.** macOS Open-With spike (see hard spots), Linux

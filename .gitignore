@@ -1,12 +1,6 @@
-lib/__pycache__
-lib/photo_viewer.egg-info
-lib/view/__pycache__
-venv
-tests/__pycache__
-tests/__init__.py
 .claude
-.coverage
 /result
+/result-*
 
 # Rust
 /target

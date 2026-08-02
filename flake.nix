@@ -86,39 +86,9 @@
             '';
           });
 
-          ##########################################
-          # Legacy Python app (kept during rewrite) #
-          ##########################################
-
-          python = pkgs.python3;
-
-          cli = python.pkgs.buildPythonApplication {
-            pname = "photo-viewer-py";
-            version = "0.1.0";
-            pyproject = true;
-
-            src = pkgs.lib.cleanSource ./.;
-
-            build-system = [ python.pkgs.setuptools ];
-
-            dependencies = [
-              python.pkgs.pyside6
-              python.pkgs.pillow
-            ];
-
-            nativeBuildInputs = [ pkgs.qt6.wrapQtAppsHook ];
-            buildInputs = [ pkgs.qt6.qtbase ];
-
-            dontWrapQtApps = true;
-            makeWrapperArgs = [
-              "\${qtWrapperArgs[@]}"
-            ];
-
-            postInstall = ''
-              site_packages=$out/${python.sitePackages}
-              cp -r $src/icons $site_packages/icons
-            '';
-          };
+          ############################
+          # macOS .app bundle plumbing #
+          ############################
 
           infoPlist = pkgs.writeText "Info.plist" ''
             <?xml version="1.0" encoding="UTF-8"?>
@@ -195,12 +165,8 @@
           };
         in
         {
-          # New Rust binary — the default going forward.
           viewer = viewer;
           default = viewer;
-
-          # Legacy Python app, available during the migration.
-          photo-viewer-py = cli;
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
           app = appBundle;
           install-app = installApp;
@@ -242,7 +208,6 @@
           ];
         in
         {
-          # Rust dev shell (default).
           default = pkgs.mkShell {
             packages = [ rustToolchain pkgs.pkg-config ]
               ++ lib.optionals stdenv.isLinux runtimeLibs;
@@ -260,34 +225,8 @@
               echo "  cargo build / clippy / test"
               echo "  nix run               # build+run via Nix"
               echo ""
-              echo "Old Python shell: nix develop .#python"
-              echo ""
             '';
           };
-
-          # Legacy Python dev shell, preserved for the migration.
-          python =
-            let py = pkgs.python3; in
-            pkgs.mkShell {
-              packages = [
-                (py.withPackages (ps: [
-                  ps.pyside6
-                  ps.pillow
-                  ps.pytest
-                  ps.pytest-qt
-                  ps.pytest-cov
-                ]))
-              ] ++ lib.optionals stdenv.hostPlatform.isLinux [
-                pkgs.qt6.qtwayland
-              ];
-
-              shellHook = ''
-                export QT_PLUGIN_PATH="${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}"
-                echo "photo-viewer — legacy Python dev shell"
-                echo "  python -m lib.main [path]   # run old Qt app"
-                echo "  pytest                      # run tests"
-              '';
-            };
         }
       );
     };

@@ -257,20 +257,28 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       hacks are Qt-specific; winit auto-detects Wayland + HiDPI, and the runtime graphics
       libs are already handled by the flake (`LD_LIBRARY_PATH` in the devShell, `patchelf`
       rpath in the package).
-- [ ] **Phase 7 — Cutover.** Delete `lib/` + Python flake bits, rewrite README, final test pass,
-      confirm all keybindings match the table above.
+- [x] **Phase 7 — Cutover.** Deleted `lib/` + `tests/*.py` + `pyproject.toml` / `requirements.txt`
+      / `pyrightconfig.json`; stripped the Python package (`photo-viewer-py`) and `.#python`
+      devShell from `flake.nix`; cleaned Python entries out of `.gitignore`. README rewritten for
+      the Rust app (keybinding tables + Rust/Nix workflow). Final pass: 51 tests green, clippy
+      clean, `nix eval` shows outputs are just `app`/`default`/`install-app`/`viewer` +
+      `devShells.default`. Every key in §1 verified against `src/main.rs` (`h/l` aliases,
+      `Shift+R` dual-match, `Cmd+F`/`Cmd+D`, `o`, `?`/`Esc`).
+      **Notes:** kept `RUST_REWRITE_PLAN.md` as migration history. Only manual item still open is
+      OS-level macOS Open-With delivery (parsing is unit-tested; needs an `open -a` / Finder check).
 
 ---
 
 ## 5. Parity checklist (verify before deleting Python)
 
-- [ ] All keybindings in §1 behave identically (incl. `h/l` aliases, Shift/Ctrl variants).
+- [x] All keybindings in §1 behave identically (incl. `h/l` aliases, Shift/Ctrl variants).
+      (Phase 7 — verified against `src/main.rs` key mapping.)
 - [x] Cache format round-trips with existing `.photo-viewer/favourites` + `to_delete`.
       (Phase 1 `save_then_load_round_trips` test; same newline-joined absolute-path format.)
 - [x] Un-favourite also un-deletes; can't delete a favourite. (Phase 3 `toggle_favourite`/`toggle_delete`.)
 - [x] Rotate writes back to the source file; delete-all unlinks from disk. (delete-all Phase 3; rotate Phase 5 `rotate_file`.)
 - [x] Save-favourites copies (not moves), skips existing. (Phase 1 domain; wired to `Cmd+F` in Phase 3.)
-- [ ] Circular nav wraps at both ends.
+- [x] Circular nav wraps at both ends. (Phase 1 `PointedList` next/prev wrap tests.)
 - [~] macOS double-click / "Open With" opens the file. (Apple Event handler wired +
       parsing unit-tested in Phase 6; OS delivery pending a manual `open -a` / Finder check.)
 - [x] `nix run`, `nix build .#app`, `nix run .#install-app`, `nix develop` all work.

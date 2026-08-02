@@ -17,6 +17,8 @@ iced = { version = "0.13", features = ["image", "tokio"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # spawn_blocking for CPU-bound decode without stalling the async runtime.
 tokio = { version = "1", features = ["rt"] }
+# Native directory picker (save-favourites destination).
+rfd = "0.15"
 
 [profile.dev]
 # iced pulls a big dependency tree; a little opt keeps debug runs snappy.

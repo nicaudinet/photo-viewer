@@ -192,8 +192,18 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
       **Notes:** Python opens a *directory* in the wall view; wall view is Phase 4, so for now a
       dir opens single view. No LoadingView yet (shows "Loading…" text while first decode runs);
       real LoadingView timing is Phase 5. `o` open-dir picker deferred to Phase 5 (needs `rfd`).
-- [ ] **Phase 3 — Favourite / delete.** Toggle `f`/`d`, star+delete icon overlays, persistence,
-      `Ctrl+D` delete-all w/ in-app confirm overlay, `Ctrl+F` save-favourites via `rfd` dir picker.
+- [x] **Phase 3 — Favourite / delete.** `f` toggles favourite (un-favouriting also un-deletes),
+      `d` toggles mark-to-delete (refused on a favourite) — both persist via the Phase-1 domain.
+      Star/delete icons (`icons/{star,delete}.png`, embedded via `include_bytes!`) overlaid
+      top-right with a `Stack`, star winning. `Cmd+D` opens an in-app confirm overlay (modal:
+      `update` swallows all but confirm/cancel/quit while it's up; `y`/Enter accept, `n`/Esc
+      cancel), then `delete_all` unlinks from disk; if the whole library is deleted it drops to
+      the empty view. `Cmd+F` runs a native dir picker (`rfd::AsyncFileDialog` in a `Task`) then
+      `save_favourites`. Added dep: `rfd` 0.15. Build + clippy clean, 50 tests green, smoke-ran.
+      **Notes:** modifiers read via `modifiers.command()` = Cmd on macOS, matching the Python app
+      (Qt maps Cmd→ControlModifier on mac). Favourite/delete toggles don't re-decode — the
+      overlay is derived from library state each frame. `rfd` async picker marshals to the main
+      thread itself; works from an iced `Task`.
 - [ ] **Phase 4 — Wall view.** Async thumbnails, masonry columns in `scrollable`, selection
       highlight, click→single, `f`/`d` filter toggles, `w` swap both ways.
 - [ ] **Phase 5 — Rotate + open + empty/loading.** `r`/`Shift+R` rotate+save to disk,
@@ -210,9 +220,9 @@ Replace the Python flake. Keep the same UX: `nix run`, `nix build .#app`,
 - [ ] All keybindings in §1 behave identically (incl. `h/l` aliases, Shift/Ctrl variants).
 - [x] Cache format round-trips with existing `.photo-viewer/favourites` + `to_delete`.
       (Phase 1 `save_then_load_round_trips` test; same newline-joined absolute-path format.)
-- [ ] Un-favourite also un-deletes; can't delete a favourite.
-- [ ] Rotate writes back to the source file; delete-all unlinks from disk.
-- [ ] Save-favourites copies (not moves), skips existing.
+- [x] Un-favourite also un-deletes; can't delete a favourite. (Phase 3 `toggle_favourite`/`toggle_delete`.)
+- [ ] Rotate writes back to the source file; delete-all unlinks from disk. (delete-all done Phase 3; rotate Phase 5.)
+- [x] Save-favourites copies (not moves), skips existing. (Phase 1 domain; wired to `Cmd+F` in Phase 3.)
 - [ ] Circular nav wraps at both ends.
 - [ ] macOS double-click / "Open With" opens the file (or documented fallback).
 - [ ] `nix run`, `nix build .#app`, `nix run .#install-app`, `nix develop` all work.

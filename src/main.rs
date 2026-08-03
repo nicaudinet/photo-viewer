@@ -54,9 +54,12 @@ pub fn main() -> iced::Result {
     // launch-time "Open With" event is caught (no-op off macOS).
     platform::install_open_file_handler();
 
-    iced::application(App::title, App::update, App::view)
+    // 0.14 moved `boot` to the first argument (was `run_with`) and turned the
+    // title into a builder method.
+    iced::application(App::new, App::update, App::view)
+        .title(App::title)
         .subscription(App::subscription)
-        .theme(|_app| Theme::Dark)
+        .theme(Theme::Dark)
         .window(iced::window::Settings {
             size: Size::new(800.0, 600.0),
             // Start hidden and reveal on the first rendered frame (see
@@ -66,7 +69,7 @@ pub fn main() -> iced::Result {
             visible: false,
             ..iced::window::Settings::default()
         })
-        .run_with(App::new)
+        .run()
 }
 
 /// Which view is on screen.
@@ -433,7 +436,7 @@ impl App {
                 } else {
                     Mode::Windowed
                 };
-                iced::window::get_latest().and_then(move |id| iced::window::change_mode(id, mode))
+                iced::window::latest().and_then(move |id| iced::window::set_mode(id, mode))
             }
             Message::KeyF => {
                 match self.screen {
@@ -513,8 +516,8 @@ impl App {
                     return Task::none();
                 }
                 self.revealed = true;
-                iced::window::get_latest()
-                    .and_then(|id| iced::window::change_mode(id, Mode::Windowed))
+                iced::window::latest()
+                    .and_then(|id| iced::window::set_mode(id, Mode::Windowed))
             }
             Message::ThumbClicked(index) => {
                 if let Some(lib) = &mut self.library {
@@ -592,7 +595,12 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let keys = keyboard::on_key_press(|key, modifiers| {
+        // 0.14 unified keyboard subscriptions into a single `listen()` that
+        // emits raw `keyboard::Event`s; filter for key-presses ourselves.
+        let keys = keyboard::listen().filter_map(|event| {
+            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+                return None;
+            };
             let cmd = modifiers.command();
             match key.as_ref() {
                 keyboard::Key::Named(Named::ArrowRight) => Some(Message::Next),
@@ -667,7 +675,10 @@ impl App {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
-            None => iced::widget::Space::new(Length::Fill, Length::Fill).into(),
+            None => iced::widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
         };
 
         let Some(lib) = &self.library else {
@@ -870,6 +881,8 @@ fn thumb_button_style(theme: &Theme, selected: bool) -> button::Style {
             Border::default()
         },
         shadow: Shadow::default(),
+        // 0.14 added pixel-grid snapping; keep the non-crisp default.
+        snap: false,
     }
 }
 

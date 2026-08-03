@@ -386,7 +386,7 @@ impl App {
         // 0.14 unified keyboard subscriptions into a single `listen()` that
         // emits raw `keyboard::Event`s; filter for key-presses ourselves.
         let keys = keyboard::listen().filter_map(|event| {
-            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+            let keyboard::Event::KeyPressed { key, modified_key, modifiers, .. } = event else {
                 return None;
             };
             let cmd = modifiers.command();
@@ -408,7 +408,11 @@ impl App {
                 keyboard::Key::Character("r") => {
                     Some(Message::Single(SingleMsg::RotateAnticlockwise))
                 }
-                keyboard::Key::Character("?") => Some(Message::ToggleHelp),
+                // `key` is the base layout key (no modifiers), so Shift+/ shows
+                // up as "/" here; the actual "?" lives in `modified_key`.
+                _ if modified_key.as_ref() == keyboard::Key::Character("?") => {
+                    Some(Message::ToggleHelp)
+                }
                 keyboard::Key::Character("f") if cmd => Some(Message::Single(SingleMsg::SaveFavourites)),
                 keyboard::Key::Character("f") => Some(Message::KeyF),
                 keyboard::Key::Character("d") if cmd => Some(Message::DeleteAll),

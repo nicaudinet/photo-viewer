@@ -57,7 +57,15 @@ pub fn main() -> iced::Result {
     iced::application(App::title, App::update, App::view)
         .subscription(App::subscription)
         .theme(|_app| Theme::Dark)
-        .window_size(Size::new(800.0, 600.0))
+        .window(iced::window::Settings {
+            size: Size::new(800.0, 600.0),
+            // Start hidden and reveal on the first rendered frame (see
+            // `App::subscription` / `Message::WindowReady`) so the window never
+            // shows the OS default background before iced paints — this is what
+            // removes the white startup flash.
+            visible: false,
+            ..iced::window::Settings::default()
+        })
         .run_with(App::new)
 }
 
@@ -101,6 +109,9 @@ struct App {
     wall_filter: WallFilter,
     help_open: bool,
     fullscreen: bool,
+    /// The window starts hidden (`visible: false`) and is revealed on its first
+    /// rendered frame to avoid a white startup flash; this latches that reveal.
+    revealed: bool,
     /// `Some(count)` while the delete-all confirmation overlay is showing.
     confirm_delete: Option<usize>,
     star_icon: image::Handle,
@@ -135,6 +146,8 @@ enum Message {
     OpenDirPicked(Option<PathBuf>),
     /// Timer tick: drain any paths the platform delivered (macOS "Open With").
     PollOpenFiles,
+    /// The first frame has rendered; reveal the (initially hidden) window.
+    WindowReady,
     ThumbClicked(usize),
     ThumbDecoded {
         path: PathBuf,
@@ -179,6 +192,7 @@ impl App {
             wall_filter: WallFilter::All,
             help_open: false,
             fullscreen: false,
+            revealed: false,
             confirm_delete: None,
             star_icon: image::Handle::from_bytes(STAR_ICON.to_vec()),
             delete_icon: image::Handle::from_bytes(DELETE_ICON.to_vec()),
@@ -494,6 +508,14 @@ impl App {
                     None => Task::none(),
                 }
             }
+            Message::WindowReady => {
+                if self.revealed {
+                    return Task::none();
+                }
+                self.revealed = true;
+                iced::window::get_latest()
+                    .and_then(|id| iced::window::change_mode(id, Mode::Windowed))
+            }
             Message::ThumbClicked(index) => {
                 if let Some(lib) = &mut self.library {
                     lib.goto(index);
@@ -599,17 +621,21 @@ impl App {
             }
         });
 
+        let mut subs = vec![keys];
+
+        // The window starts hidden; reveal it on its first rendered frame.
+        // `frames()` only listens for `RedrawRequested` (it adds no redraws of
+        // its own) and drops out of the set once `revealed` latches.
+        if !self.revealed {
+            subs.push(iced::window::frames().map(|_| Message::WindowReady));
+        }
+
         // macOS delivers "Open With" files as Apple Events off the main input
         // path; poll the buffer they land in. No such source elsewhere.
         #[cfg(target_os = "macos")]
-        {
-            let poll = iced::time::every(Duration::from_millis(200)).map(|_| Message::PollOpenFiles);
-            Subscription::batch([keys, poll])
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            keys
-        }
+        subs.push(iced::time::every(Duration::from_millis(200)).map(|_| Message::PollOpenFiles));
+
+        Subscription::batch(subs)
     }
 
     fn view(&self) -> Element<'_, Message> {

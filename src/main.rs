@@ -36,7 +36,7 @@ use iced::{
     Background, Border, Color, ContentFit, Element, Length, Shadow, Size, Subscription, Task, Theme,
 };
 
-use library::{load_library, Library};
+use library::{load_library, Library, IMAGE_EXTENSIONS};
 
 /// Star/delete overlay icons, baked into the binary (no runtime path lookup).
 const STAR_ICON: &[u8] = include_bytes!("../icons/star.png");
@@ -147,6 +147,9 @@ enum Message {
     /// `o`: pick a directory to open.
     OpenDir,
     OpenDirPicked(Option<PathBuf>),
+    /// `Shift+O`: pick a single image file to open (single view).
+    OpenFile,
+    OpenFilePicked(Option<PathBuf>),
     /// Timer tick: drain any paths the platform delivered (macOS "Open With").
     PollOpenFiles,
     /// The first frame has rendered; reveal the (initially hidden) window.
@@ -173,7 +176,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2192} / l", "Next image"),
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
-    ("o", "Open directory"),
+    ("o / \u{21e7}O", "Open directory / file"),
     ("f", "Favourite / favourites filter"),
     ("\u{2318}F", "Save favourites"),
     ("d", "Mark to delete / to-delete filter"),
@@ -504,6 +507,19 @@ impl App {
             ),
             Message::OpenDirPicked(Some(dir)) => self.open(dir),
             Message::OpenDirPicked(None) => Task::none(),
+            Message::OpenFile => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Select an image to open")
+                        .add_filter("Images", &IMAGE_EXTENSIONS)
+                        .pick_file()
+                        .await
+                        .map(|handle| handle.path().to_path_buf())
+                },
+                Message::OpenFilePicked,
+            ),
+            Message::OpenFilePicked(Some(file)) => self.open(file),
+            Message::OpenFilePicked(None) => Task::none(),
             Message::PollOpenFiles => {
                 // Finder may hand us several files; open the last (single window).
                 match platform::take_open_files().pop() {
@@ -613,6 +629,7 @@ impl App {
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
                 keyboard::Key::Character("o") => Some(Message::OpenDir),
+                keyboard::Key::Character("O") => Some(Message::OpenFile),
                 keyboard::Key::Character("R") => Some(Message::RotateClockwise),
                 keyboard::Key::Character("r") if modifiers.shift() => {
                     Some(Message::RotateClockwise)

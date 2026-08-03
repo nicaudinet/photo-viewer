@@ -144,10 +144,7 @@ enum Message {
         path: PathBuf,
         result: Result<(), String>,
     },
-    /// `o`: pick a directory to open.
-    OpenDir,
-    OpenDirPicked(Option<PathBuf>),
-    /// `Shift+O`: pick a single image file to open (single view).
+    /// `o`: pick a single image file to open (single view).
     OpenFile,
     OpenFilePicked(Option<PathBuf>),
     /// Timer tick: drain any paths the platform delivered (macOS "Open With").
@@ -176,7 +173,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2192} / l", "Next image"),
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
-    ("o / \u{21e7}O", "Open directory / file"),
+    ("o", "Open file"),
     ("f", "Favourite / favourites filter"),
     ("\u{2318}F", "Save favourites"),
     ("d", "Mark to delete / to-delete filter"),
@@ -495,18 +492,6 @@ impl App {
                     Task::none()
                 }
             },
-            Message::OpenDir => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Select a directory to open")
-                        .pick_folder()
-                        .await
-                        .map(|handle| handle.path().to_path_buf())
-                },
-                Message::OpenDirPicked,
-            ),
-            Message::OpenDirPicked(Some(dir)) => self.open(dir),
-            Message::OpenDirPicked(None) => Task::none(),
             Message::OpenFile => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -628,8 +613,7 @@ impl App {
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
-                keyboard::Key::Character("o") => Some(Message::OpenDir),
-                keyboard::Key::Character("O") => Some(Message::OpenFile),
+                keyboard::Key::Character("o") => Some(Message::OpenFile),
                 keyboard::Key::Character("R") => Some(Message::RotateClockwise),
                 keyboard::Key::Character("r") if modifiers.shift() => {
                     Some(Message::RotateClockwise)

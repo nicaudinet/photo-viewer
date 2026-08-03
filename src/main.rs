@@ -177,8 +177,8 @@ impl App {
                 }
                 // A directory: show the wall of all its images.
                 None => {
-                    let wall = WallState::new(lib);
-                    let task = wall.decode_thumbs();
+                    let mut wall = WallState::new(lib);
+                    let task = wall.schedule();
                     self.screen = Screen::Wall(wall);
                     task
                 }
@@ -295,8 +295,8 @@ impl App {
             // decode cache is dropped, so the new view always decodes fresh.
             Message::ToggleWall => match std::mem::replace(&mut self.screen, Screen::Empty) {
                 Screen::Single(s) => {
-                    let wall = WallState::new(s.library);
-                    let task = wall.decode_thumbs();
+                    let mut wall = WallState::new(s.library);
+                    let task = wall.schedule();
                     self.screen = Screen::Wall(wall);
                     task
                 }

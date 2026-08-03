@@ -19,9 +19,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # IDCT at 1/2/4/8 size, so a 300px thumb skips most of a full-res decode.
 jpeg-decoder = "0.3"
 # spawn_blocking for CPU-bound decode; time for the delayed loading indicator
-# and the empty-view fallback timer; sync for the Semaphore that bounds
-# concurrent thumbnail decodes.
-tokio = { version = "1", features = ["rt", "time", "sync"] }
+# and the empty-view fallback timer.
+tokio = { version = "1", features = ["rt", "time"] }
 # Native directory picker (save-favourites destination).
 rfd = "0.15"
 

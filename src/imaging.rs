@@ -8,10 +8,40 @@
 
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use ::image::{DynamicImage, GenericImageView};
 use iced::widget::image;
+use tokio::sync::Semaphore;
+
+/// Cap on thumbnails decoded at once. A wall of N images fires N decode tasks,
+/// but each waits for a permit here first, so at most `available_parallelism`
+/// heavy `spawn_blocking` jobs run concurrently — bounding CPU thrash and peak
+/// memory (each in-flight decode holds a full source image).
+fn decode_limit() -> &'static Semaphore {
+    static LIMIT: OnceLock<Semaphore> = OnceLock::new();
+    LIMIT.get_or_init(|| {
+        let n = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        Semaphore::new(n)
+    })
+}
+
+/// Decode a thumbnail off-thread under the [`decode_limit`] permit. Awaits a
+/// permit, then runs [`thumbnail`] on the blocking pool; the permit is held for
+/// the whole decode and released when it lands.
+pub(crate) async fn thumbnail_bounded(
+    path: PathBuf,
+    width: u32,
+) -> Result<(image::Handle, u32), String> {
+    // acquire() only errors if the semaphore is closed, which never happens.
+    let _permit = decode_limit().acquire().await.expect("decode semaphore");
+    tokio::task::spawn_blocking(move || thumbnail(&path, width))
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))
+}
 
 /// Decode + downscale to a `width`-wide thumbnail. Returns the handle and its
 /// scaled height (for masonry column bookkeeping).

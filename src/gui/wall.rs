@@ -94,13 +94,7 @@ impl WallState {
                 let path = p.clone();
                 let key = p.clone();
                 Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            crate::imaging::thumbnail(&path, THUMB_WIDTH)
-                        })
-                        .await
-                        .unwrap_or_else(|e| Err(e.to_string()))
-                    },
+                    crate::imaging::thumbnail_bounded(path, THUMB_WIDTH),
                     move |result| {
                         Message::Wall(WallMsg::ThumbDecoded {
                             path: key.clone(),

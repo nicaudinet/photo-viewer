@@ -260,7 +260,6 @@ impl App {
         self.generation += 1;
         let generation = self.generation;
         let path = lib.current().clone();
-        self.large = None;
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || decode_large(&path))

@@ -127,7 +127,7 @@ impl SingleState {
         let path = self.library.current().clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || crate::image::full(&path))
+                tokio::task::spawn_blocking(move || crate::imaging::full(&path))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
@@ -141,7 +141,9 @@ impl SingleState {
         let path = self.library.current().clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || crate::image::rotate_in_place(&path, clockwise))
+                tokio::task::spawn_blocking(move || {
+                    crate::imaging::rotate_in_place(&path, clockwise)
+                })
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },

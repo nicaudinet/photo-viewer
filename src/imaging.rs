@@ -3,8 +3,8 @@
 //! All functions here are plain synchronous CPU work run under
 //! `spawn_blocking` by the GUI modules; the returned [`image::Handle`] is inert
 //! pixel data, safe to hand back to the render thread. Note the leading `::` on
-//! `::image`: that is the `image` crate (decoders), distinct from this module
-//! and from `iced::widget::image` (the handle type).
+//! `::image`: that is the `image` crate (decoders), as opposed to
+//! `iced::widget::image` (the handle type) imported below.
 
 use std::fs::File;
 use std::io::BufReader;

@@ -11,6 +11,9 @@
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
 //!   help. Roadmap in `RUST_REWRITE_PLAN.md`.
+//!
+//! `App` here owns only screen-independent state and the transitions between
+//! screens; each screen's own state, actions, and view live in `gui/`.
 
 // Pure domain core (Phase 1). Later phases consume more of its API; allow the
 // still-unused surface for now.
@@ -20,34 +23,26 @@ mod platform;
 #[allow(dead_code)]
 mod pointed_list;
 
-use std::collections::HashMap;
+mod gui;
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use iced::alignment::{Horizontal, Vertical};
 use iced::keyboard;
 use iced::keyboard::key::Named;
-use iced::widget::{
-    button, center, column, container, image, responsive, row, scrollable, text, Column, Row,
-    Stack,
-};
+use iced::widget::{image, Stack};
 use iced::window::Mode;
-use iced::{
-    Background, Border, Color, ContentFit, Element, Length, Shadow, Size, Subscription, Task, Theme,
-};
+use iced::{Element, Size, Subscription, Task, Theme};
 
+use gui::empty::empty_view;
+use gui::single::{SingleMsg, SingleState};
+use gui::wall::{WallMsg, WallState};
+use gui::{confirm_overlay, help_overlay};
 use library::{load_library, Library, IMAGE_EXTENSIONS};
 
 /// Star/delete overlay icons, baked into the binary (no runtime path lookup).
 const STAR_ICON: &[u8] = include_bytes!("../icons/star.png");
 const DELETE_ICON: &[u8] = include_bytes!("../icons/delete.png");
-
-const ICON_SIZE: f32 = 40.0;
-const ICON_MARGIN: f32 = 10.0;
-
-/// Thumbnail column width and inter-item spacing (matches the Python wall).
-const THUMB_WIDTH: u32 = 300;
-const WALL_SPACING: f32 = 20.0;
 
 pub fn main() -> iced::Result {
     // Register the macOS open-file handler before the event loop starts, so a
@@ -84,48 +79,14 @@ enum Screen {
     Wall(WallState),
 }
 
-/// Single-view state: the library plus the current fit-to-window decode and the
-/// delete-all confirmation (only reachable from single view).
-struct SingleState {
-    library: Library,
-    /// Latest fit-to-window decode for the current path. `None` until the first
-    /// decode lands (the previous image stays on screen meanwhile).
-    large: Option<image::Handle>,
-    /// `Some(count)` while the delete-all confirmation overlay is showing.
-    confirm_delete: Option<usize>,
-}
-
-/// Wall-view state: the library plus its thumbnail cache and visibility filter.
-struct WallState {
-    library: Library,
-    /// Decoded thumbnails, keyed by path. Decoded once per wall session.
-    thumbs: HashMap<PathBuf, ThumbState>,
-    wall_filter: WallFilter,
-}
-
-/// Wall-view visibility filter. Toggling one filter off returns to `All`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WallFilter {
-    All,
-    Favourites,
-    ToDelete,
-}
-
-/// A decoded thumbnail: the RGBA handle plus its scaled pixel size (needed for
-/// masonry column-height bookkeeping).
-struct ThumbState {
-    handle: image::Handle,
-    height: u32,
-}
-
 /// The whole model: only screen-independent state lives here. Per-view state
 /// lives in the `Screen` variant that needs it.
 struct App {
     screen: Screen,
     /// Bumped on every large decode (nav / open / rotate / toggle); tags
-    /// `LargeDecoded` so a superseded decode can't overwrite a newer one. Global
-    /// and monotonic — kept out of `SingleState` so it can't reset and let a
-    /// stale in-flight decode collide with a fresh session's generation.
+    /// `SingleMsg::LargeDecoded` so a superseded decode can't overwrite a newer
+    /// one. Global and monotonic — kept out of `SingleState` so it can't reset
+    /// and let a stale in-flight decode collide with a fresh session's number.
     generation: u64,
     help_open: bool,
     fullscreen: bool,
@@ -138,65 +99,40 @@ struct App {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Next,
-    Prev,
+    // Global — handled at the top level regardless of screen.
     Quit,
     ToggleFullscreen,
     ToggleHelp,
     /// Esc: cancel the confirm overlay if open, else close help.
     Escape,
+    /// The first frame has rendered; reveal the (initially hidden) window.
+    WindowReady,
+
+    // Ambiguous shared keys: same key, different meaning per screen. The live
+    // screen isn't visible to `subscription`, so these stay neutral here and are
+    // dispatched to the current screen's update in `App::update`.
     /// `f`: favourite toggle (single) or favourites filter (wall).
     KeyF,
     /// `d`: delete toggle (single) or to-delete filter (wall).
     KeyD,
+
+    // Transitions between screens — owned by `App` because a per-screen update
+    // can't reassign `self.screen`.
     ToggleWall,
-    /// `r`: rotate the current image anticlockwise, writing it to disk.
-    RotateAnticlockwise,
-    /// `Shift+R`: rotate the current image clockwise, writing it to disk.
-    RotateClockwise,
-    /// Result of a rotate: on success, re-decode the (now rotated) file.
-    Rotated {
-        result: Result<(), String>,
-    },
     /// `o`: pick a single image file to open (single view).
     OpenFile,
     OpenFilePicked(Option<PathBuf>),
     /// Timer tick: drain any paths the platform delivered (macOS "Open With").
     PollOpenFiles,
-    /// The first frame has rendered; reveal the (initially hidden) window.
-    WindowReady,
     ThumbClicked(usize),
-    ThumbDecoded {
-        path: PathBuf,
-        result: Result<(image::Handle, u32), String>,
-    },
-    SaveFavourites,
-    SaveFavDirPicked(Option<PathBuf>),
     DeleteAll,
     ConfirmYes,
     ConfirmNo,
-    LargeDecoded {
-        generation: u64,
-        result: Result<image::Handle, String>,
-    },
-}
 
-/// Shown in the help overlay, in press-order.
-const SHORTCUTS: &[(&str, &str)] = &[
-    ("\u{2190} / h", "Previous image"),
-    ("\u{2192} / l", "Next image"),
-    ("w", "Wall / single (toggle)"),
-    ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
-    ("o", "Open file"),
-    ("f", "Favourite / favourites filter"),
-    ("\u{2318}F", "Save favourites"),
-    ("d", "Mark to delete / to-delete filter"),
-    ("\u{2318}D", "Delete all marked"),
-    ("e", "Fullscreen (toggle)"),
-    ("?", "Show help (toggle)"),
-    ("Esc", "Close help"),
-    ("q", "Quit"),
-];
+    // Delegated to the current screen's own update.
+    Single(SingleMsg),
+    Wall(WallMsg),
+}
 
 impl App {
     fn new() -> (App, Task<Message>) {
@@ -229,29 +165,23 @@ impl App {
         };
 
         match load_library(&dir) {
-            Ok(Some(mut lib)) => {
-                match target {
-                    // A file: open it directly in single view.
-                    Some(file) => {
-                        lib.paths.goto_value(&file);
-                        self.screen = Screen::Single(SingleState {
-                            library: lib,
-                            large: None,
-                            confirm_delete: None,
-                        });
-                        self.decode_current()
-                    }
-                    // A directory: show the wall of all its images.
-                    None => {
-                        self.screen = Screen::Wall(WallState {
-                            library: lib,
-                            thumbs: HashMap::new(),
-                            wall_filter: WallFilter::All,
-                        });
-                        self.decode_thumbs()
-                    }
+            Ok(Some(mut lib)) => match target {
+                // A file: open it directly in single view.
+                Some(file) => {
+                    lib.paths.goto_value(&file);
+                    let single = SingleState::new(lib);
+                    let task = single.decode_current(&mut self.generation);
+                    self.screen = Screen::Single(single);
+                    task
                 }
-            }
+                // A directory: show the wall of all its images.
+                None => {
+                    let wall = WallState::new(lib);
+                    let task = wall.decode_thumbs();
+                    self.screen = Screen::Wall(wall);
+                    task
+                }
+            },
             Ok(None) => {
                 self.screen = Screen::Empty;
                 Task::none()
@@ -262,44 +192,6 @@ impl App {
                 Task::none()
             }
         }
-    }
-
-    /// Kick off an off-thread decode of the current image, tagged with a fresh
-    /// generation so an earlier in-flight decode can't overwrite it. No-op off
-    /// single view.
-    fn decode_current(&mut self) -> Task<Message> {
-        let path = match &self.screen {
-            Screen::Single(s) => s.library.current().clone(),
-            _ => return Task::none(),
-        };
-        self.generation += 1;
-        let generation = self.generation;
-        Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || decode_large(&path))
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            move |result| Message::LargeDecoded { generation, result },
-        )
-    }
-
-    /// Decode every not-yet-cached thumbnail of the current wall. No-op off wall
-    /// view.
-    fn decode_thumbs(&self) -> Task<Message> {
-        match &self.screen {
-            Screen::Wall(w) => w.decode_thumbs(),
-            _ => Task::none(),
-        }
-    }
-
-    /// Run `f` against the single-view library, then re-decode the new current.
-    fn navigate(&mut self, f: impl FnOnce(&mut Library)) -> Task<Message> {
-        match &mut self.screen {
-            Screen::Single(s) => f(&mut s.library),
-            _ => return Task::none(),
-        }
-        self.decode_current()
     }
 
     /// Unlink every marked file, then re-decode the new current — or fall back
@@ -318,25 +210,11 @@ impl App {
             self.screen = Screen::Empty;
             Task::none()
         } else {
-            self.decode_current()
+            match &self.screen {
+                Screen::Single(s) => s.decode_current(&mut self.generation),
+                _ => Task::none(),
+            }
         }
-    }
-
-    /// Rotate the current image 90° (clockwise if `clockwise`, else anti-),
-    /// writing the result back to its file off-thread. Only in single view.
-    fn rotate(&mut self, clockwise: bool) -> Task<Message> {
-        let path = match &self.screen {
-            Screen::Single(s) => s.library.current().clone(),
-            _ => return Task::none(),
-        };
-        Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || rotate_file(&path, clockwise))
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            move |result| Message::Rotated { result },
-        )
     }
 
     /// The current library, whichever loaded view holds it.
@@ -369,8 +247,6 @@ impl App {
         }
 
         match message {
-            Message::Next => self.navigate(Library::next),
-            Message::Prev => self.navigate(Library::prev),
             Message::Quit => iced::exit(),
             Message::ToggleHelp => {
                 self.help_open = !self.help_open;
@@ -394,57 +270,42 @@ impl App {
                 };
                 iced::window::latest().and_then(move |id| iced::window::set_mode(id, mode))
             }
-            Message::KeyF => {
-                match &mut self.screen {
-                    Screen::Single(s) => s.toggle_favourite(),
-                    Screen::Wall(w) => {
-                        w.wall_filter = toggle_filter(w.wall_filter, WallFilter::Favourites);
-                    }
-                    Screen::Empty => {}
+            Message::WindowReady => {
+                if self.revealed {
+                    return Task::none();
                 }
-                Task::none()
+                self.revealed = true;
+                iced::window::latest().and_then(|id| iced::window::set_mode(id, Mode::Windowed))
             }
-            Message::KeyD => {
-                match &mut self.screen {
-                    Screen::Single(s) => s.toggle_delete(),
-                    Screen::Wall(w) => {
-                        w.wall_filter = toggle_filter(w.wall_filter, WallFilter::ToDelete);
-                    }
-                    Screen::Empty => {}
-                }
-                Task::none()
-            }
-            // Move the library across to the other view. The losing view's decode
-            // cache is dropped, so the new view always decodes fresh.
-            Message::ToggleWall => match std::mem::replace(&mut self.screen, Screen::Empty) {
-                Screen::Single(s) => {
-                    self.screen = Screen::Wall(WallState {
-                        library: s.library,
-                        thumbs: HashMap::new(),
-                        wall_filter: WallFilter::All,
-                    });
-                    self.decode_thumbs()
-                }
-                Screen::Wall(w) => {
-                    self.screen = Screen::Single(SingleState {
-                        library: w.library,
-                        large: None,
-                        confirm_delete: None,
-                    });
-                    self.decode_current()
-                }
+
+            // Shared keys: disambiguate by screen, then hand to that screen.
+            Message::KeyF => match &mut self.screen {
+                Screen::Single(s) => s.update(SingleMsg::ToggleFavourite, &mut self.generation),
+                Screen::Wall(w) => w.update(WallMsg::FilterFavourites),
                 Screen::Empty => Task::none(),
             },
-            Message::RotateAnticlockwise => self.rotate(false),
-            Message::RotateClockwise => self.rotate(true),
-            Message::Rotated { result } => match result {
-                // The file changed on disk: re-decode the current image. (Wall
-                // thumbnails are rebuilt on next entry, so none is stale here.)
-                Ok(()) => self.decode_current(),
-                Err(e) => {
-                    eprintln!("Rotate failed: {e}");
-                    Task::none()
+            Message::KeyD => match &mut self.screen {
+                Screen::Single(s) => s.update(SingleMsg::ToggleDelete, &mut self.generation),
+                Screen::Wall(w) => w.update(WallMsg::FilterToDelete),
+                Screen::Empty => Task::none(),
+            },
+
+            // Move the library across to the other view. The losing view's
+            // decode cache is dropped, so the new view always decodes fresh.
+            Message::ToggleWall => match std::mem::replace(&mut self.screen, Screen::Empty) {
+                Screen::Single(s) => {
+                    let wall = WallState::new(s.library);
+                    let task = wall.decode_thumbs();
+                    self.screen = Screen::Wall(wall);
+                    task
                 }
+                Screen::Wall(w) => {
+                    let single = SingleState::new(w.library);
+                    let task = single.decode_current(&mut self.generation);
+                    self.screen = Screen::Single(single);
+                    task
+                }
+                Screen::Empty => Task::none(),
             },
             Message::OpenFile => Task::perform(
                 async {
@@ -466,24 +327,14 @@ impl App {
                     None => Task::none(),
                 }
             }
-            Message::WindowReady => {
-                if self.revealed {
-                    return Task::none();
-                }
-                self.revealed = true;
-                iced::window::latest()
-                    .and_then(|id| iced::window::set_mode(id, Mode::Windowed))
-            }
             Message::ThumbClicked(index) => match std::mem::replace(&mut self.screen, Screen::Empty) {
                 Screen::Wall(w) => {
                     let mut library = w.library;
                     library.goto(index);
-                    self.screen = Screen::Single(SingleState {
-                        library,
-                        large: None,
-                        confirm_delete: None,
-                    });
-                    self.decode_current()
+                    let single = SingleState::new(library);
+                    let task = single.decode_current(&mut self.generation);
+                    self.screen = Screen::Single(single);
+                    task
                 }
                 // Only the wall emits `ThumbClicked`; restore anything else.
                 other => {
@@ -491,42 +342,6 @@ impl App {
                     Task::none()
                 }
             },
-            Message::ThumbDecoded { path, result } => {
-                // Dropped if we've since left the wall (the cache went with it).
-                if let Screen::Wall(w) = &mut self.screen {
-                    match result {
-                        Ok((handle, height)) => {
-                            w.thumbs.insert(path, ThumbState { handle, height });
-                        }
-                        Err(e) => eprintln!("Thumbnail decode error: {e}"),
-                    }
-                }
-                Task::none()
-            }
-            Message::SaveFavourites => {
-                if !matches!(&self.screen, Screen::Single(_)) {
-                    return Task::none();
-                }
-                Task::perform(
-                    async {
-                        rfd::AsyncFileDialog::new()
-                            .set_title("Select directory to save favourites")
-                            .pick_folder()
-                            .await
-                            .map(|handle| handle.path().to_path_buf())
-                    },
-                    Message::SaveFavDirPicked,
-                )
-            }
-            Message::SaveFavDirPicked(Some(dir)) => {
-                if let Screen::Single(s) = &self.screen {
-                    if let Err(e) = s.library.save_favourites(&dir) {
-                        eprintln!("Save favourites failed: {e}");
-                    }
-                }
-                Task::none()
-            }
-            Message::SaveFavDirPicked(None) => Task::none(),
             Message::DeleteAll => {
                 if let Screen::Single(s) = &mut self.screen {
                     let count = s.library.to_delete.len();
@@ -554,19 +369,16 @@ impl App {
                 }
                 Task::none()
             }
-            Message::LargeDecoded { generation, result } => {
-                // Generation gate first (global); then apply only if still in
-                // single view — a decode that lands after a toggle is dropped.
-                if generation == self.generation {
-                    if let Screen::Single(s) = &mut self.screen {
-                        match result {
-                            Ok(handle) => s.large = Some(handle),
-                            Err(e) => eprintln!("Decode error: {e}"),
-                        }
-                    }
-                }
-                Task::none()
-            }
+
+            // Screen-local: only acts when that screen is current.
+            Message::Single(m) => match &mut self.screen {
+                Screen::Single(s) => s.update(m, &mut self.generation),
+                _ => Task::none(),
+            },
+            Message::Wall(m) => match &mut self.screen {
+                Screen::Wall(w) => w.update(m),
+                _ => Task::none(),
+            },
         }
     }
 
@@ -579,23 +391,25 @@ impl App {
             };
             let cmd = modifiers.command();
             match key.as_ref() {
-                keyboard::Key::Named(Named::ArrowRight) => Some(Message::Next),
-                keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Prev),
+                keyboard::Key::Named(Named::ArrowRight) => Some(Message::Single(SingleMsg::Next)),
+                keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Single(SingleMsg::Prev)),
                 keyboard::Key::Named(Named::Enter) => Some(Message::ConfirmYes),
                 keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
-                keyboard::Key::Character("l") => Some(Message::Next),
-                keyboard::Key::Character("h") => Some(Message::Prev),
+                keyboard::Key::Character("l") => Some(Message::Single(SingleMsg::Next)),
+                keyboard::Key::Character("h") => Some(Message::Single(SingleMsg::Prev)),
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
                 keyboard::Key::Character("o") => Some(Message::OpenFile),
-                keyboard::Key::Character("R") => Some(Message::RotateClockwise),
+                keyboard::Key::Character("R") => Some(Message::Single(SingleMsg::RotateClockwise)),
                 keyboard::Key::Character("r") if modifiers.shift() => {
-                    Some(Message::RotateClockwise)
+                    Some(Message::Single(SingleMsg::RotateClockwise))
                 }
-                keyboard::Key::Character("r") => Some(Message::RotateAnticlockwise),
+                keyboard::Key::Character("r") => {
+                    Some(Message::Single(SingleMsg::RotateAnticlockwise))
+                }
                 keyboard::Key::Character("?") => Some(Message::ToggleHelp),
-                keyboard::Key::Character("f") if cmd => Some(Message::SaveFavourites),
+                keyboard::Key::Character("f") if cmd => Some(Message::Single(SingleMsg::SaveFavourites)),
                 keyboard::Key::Character("f") => Some(Message::KeyF),
                 keyboard::Key::Character("d") if cmd => Some(Message::DeleteAll),
                 keyboard::Key::Character("d") => Some(Message::KeyD),
@@ -645,377 +459,4 @@ impl App {
             Stack::with_children(layers).into()
         }
     }
-}
-
-impl SingleState {
-    /// Toggle the current image's favourite flag. Un-favouriting also
-    /// un-marks it for deletion. The decoded image is unchanged (overlay only).
-    fn toggle_favourite(&mut self) {
-        let path = self.library.current().clone();
-        let result = if self.library.favourites.contains(&path) {
-            self.library
-                .unfavourite(&path)
-                .and_then(|()| self.library.undelete(&path))
-        } else {
-            self.library.favourite(&path)
-        };
-        if let Err(e) = result {
-            eprintln!("Favourite toggle failed: {e}");
-        }
-    }
-
-    /// Toggle the current image's delete mark. A favourite can't be marked.
-    fn toggle_delete(&mut self) {
-        let path = self.library.current().clone();
-        let result = if self.library.to_delete.contains(&path) {
-            self.library.undelete(&path)
-        } else if self.library.favourites.contains(&path) {
-            Ok(()) // refuse: can't delete a favourite
-        } else {
-            self.library.delete(&path)
-        };
-        if let Err(e) = result {
-            eprintln!("Delete toggle failed: {e}");
-        }
-    }
-
-    fn view<'a>(
-        &'a self,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
-        let base: Element<'a, Message> = match &self.large {
-            Some(handle) => image(handle.clone())
-                .content_fit(ContentFit::Contain)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-            None => iced::widget::Space::new()
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        };
-
-        let path = self.library.current();
-        let icon = if self.library.favourites.contains(path) {
-            Some(star_icon.clone())
-        } else if self.library.to_delete.contains(path) {
-            Some(delete_icon.clone())
-        } else {
-            None
-        };
-
-        match icon {
-            Some(handle) => Stack::with_children(vec![base, corner_icon(handle)]).into(),
-            None => base,
-        }
-    }
-}
-
-impl WallState {
-    /// Decode (once) every thumbnail not already cached.
-    fn decode_thumbs(&self) -> Task<Message> {
-        let tasks: Vec<Task<Message>> = self
-            .library
-            .paths
-            .iter()
-            .filter(|p| !self.thumbs.contains_key(*p))
-            .map(|p| {
-                let path = p.clone();
-                let key = p.clone();
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || decode_thumb(&path))
-                            .await
-                            .unwrap_or_else(|e| Err(e.to_string()))
-                    },
-                    move |result| Message::ThumbDecoded {
-                        path: key.clone(),
-                        result,
-                    },
-                )
-            })
-            .collect();
-        Task::batch(tasks)
-    }
-
-    fn view<'a>(
-        &'a self,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
-        responsive(move |size| self.build_wall(size, star_icon, delete_icon)).into()
-    }
-
-    /// Lay the (filtered) thumbnails out shortest-column masonry for `size`.
-    fn build_wall<'a>(
-        &'a self,
-        size: Size,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
-        let current = self.library.paths.index();
-
-        let items: Vec<(usize, &PathBuf)> = self
-            .library
-            .paths
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| match self.wall_filter {
-                WallFilter::All => true,
-                WallFilter::Favourites => self.library.favourites.contains(*p),
-                WallFilter::ToDelete => self.library.to_delete.contains(*p),
-            })
-            .collect();
-
-        let item_width = WALL_SPACING + THUMB_WIDTH as f32;
-        let col_count = (((size.width - WALL_SPACING) / item_width).floor() as usize).max(1);
-
-        let mut buckets: Vec<Vec<Element<'a, Message>>> =
-            (0..col_count).map(|_| Vec::new()).collect();
-        let mut heights = vec![0.0_f32; col_count];
-
-        for (index, path) in items {
-            // Shortest-column placement (matches the Python masonry).
-            let col = heights
-                .iter()
-                .enumerate()
-                .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            let thumb_height = self.thumbs.get(path).map(|t| t.height as f32).unwrap_or(THUMB_WIDTH as f32);
-            buckets[col].push(self.thumb_element(index, path, current, star_icon, delete_icon));
-            heights[col] += thumb_height + WALL_SPACING;
-        }
-
-        let columns: Vec<Element<'a, Message>> = buckets
-            .into_iter()
-            .map(|items| {
-                Column::with_children(items)
-                    .spacing(WALL_SPACING)
-                    .width(Length::Fixed(THUMB_WIDTH as f32))
-                    .into()
-            })
-            .collect();
-
-        let grid = Row::with_children(columns).spacing(WALL_SPACING);
-        let centered = container(grid)
-            .width(Length::Fill)
-            .center_x(Length::Fill)
-            .padding(WALL_SPACING);
-        scrollable(centered).height(Length::Fill).into()
-    }
-
-    /// One thumbnail: image (or placeholder) + icon overlay, clickable, with a
-    /// highlight border when it is the current image. Icons are hidden while a
-    /// filter is active (the filter already conveys the status).
-    fn thumb_element<'a>(
-        &'a self,
-        index: usize,
-        path: &'a PathBuf,
-        current: usize,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
-        let inner: Element<'a, Message> = match self.thumbs.get(path) {
-            Some(thumb) => image(thumb.handle.clone())
-                .width(Length::Fixed(THUMB_WIDTH as f32))
-                .height(Length::Fixed(thumb.height as f32))
-                .into(),
-            None => container(text("Loading\u{2026}").size(14))
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .width(Length::Fixed(THUMB_WIDTH as f32))
-                .height(Length::Fixed(THUMB_WIDTH as f32))
-                .style(placeholder_style)
-                .into(),
-        };
-
-        let show_icons = self.wall_filter == WallFilter::All;
-        let icon = if show_icons && self.library.favourites.contains(path) {
-            Some(star_icon.clone())
-        } else if show_icons && self.library.to_delete.contains(path) {
-            Some(delete_icon.clone())
-        } else {
-            None
-        };
-
-        let body: Element<'a, Message> = match icon {
-            Some(handle) => Stack::with_children(vec![inner, corner_icon(handle)]).into(),
-            None => inner,
-        };
-
-        let selected = index == current;
-        button(body)
-            .padding(0)
-            .on_press(Message::ThumbClicked(index))
-            .style(move |theme: &Theme, _status| thumb_button_style(theme, selected))
-            .into()
-    }
-}
-
-/// An icon pinned to the top-right corner with a fixed margin.
-fn corner_icon(handle: image::Handle) -> Element<'static, Message> {
-    container(
-        image(handle)
-            .width(Length::Fixed(ICON_SIZE))
-            .height(Length::Fixed(ICON_SIZE)),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_x(Horizontal::Right)
-    .align_y(Vertical::Top)
-    .padding(ICON_MARGIN)
-    .into()
-}
-
-/// Rotate the image at `path` 90° and overwrite it, preserving its format (the
-/// destination extension picks the encoder). `clockwise` matches `Shift+R`; the
-/// anticlockwise case matches the Python `Image.rotate(90)`. Runs off-thread.
-fn rotate_file(path: &Path, clockwise: bool) -> Result<(), String> {
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let rotated = if clockwise {
-        img.rotate90()
-    } else {
-        img.rotate270()
-    };
-    rotated.save(path).map_err(|e| e.to_string())
-}
-
-/// Decode + fit an image to window size later; here just full-res RGBA. Runs on
-/// a blocking thread; the returned handle is plain data, safe on the GUI thread.
-fn decode_large(path: &Path) -> Result<image::Handle, String> {
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Ok(image::Handle::from_rgba(width, height, rgba.into_raw()))
-}
-
-/// Decode + downscale to a `THUMB_WIDTH`-wide thumbnail. Returns the handle and
-/// its scaled height (for masonry column bookkeeping).
-fn decode_thumb(path: &Path) -> Result<(image::Handle, u32), String> {
-    use ::image::GenericImageView;
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let (w, h) = img.dimensions();
-    let target_h = (((h as f32) / (w as f32)) * THUMB_WIDTH as f32).round().max(1.0) as u32;
-    let resized = img.resize(THUMB_WIDTH, target_h, ::image::imageops::FilterType::Triangle);
-    let rgba = resized.to_rgba8();
-    let (rw, rh) = rgba.dimensions();
-    Ok((image::Handle::from_rgba(rw, rh, rgba.into_raw()), rh))
-}
-
-/// Toggle `filter` on: pressing its key again (when already active) returns to
-/// `All`, otherwise it becomes the sole active filter.
-fn toggle_filter(current: WallFilter, filter: WallFilter) -> WallFilter {
-    if current == filter {
-        WallFilter::All
-    } else {
-        filter
-    }
-}
-
-fn thumb_button_style(theme: &Theme, selected: bool) -> button::Style {
-    let palette = theme.extended_palette();
-    button::Style {
-        background: None,
-        text_color: palette.background.base.text,
-        border: if selected {
-            Border {
-                color: palette.primary.strong.color,
-                width: 4.0,
-                radius: 0.0.into(),
-            }
-        } else {
-            Border::default()
-        },
-        shadow: Shadow::default(),
-        // 0.14 added pixel-grid snapping; keep the non-crisp default.
-        snap: false,
-    }
-}
-
-fn placeholder_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
-    container::Style {
-        background: Some(Background::Color(palette.background.weak.color)),
-        ..container::Style::default()
-    }
-}
-
-fn empty_view() -> Element<'static, Message> {
-    let label = text("No image loaded\nPress ? for help!")
-        .size(18)
-        .center();
-    center(
-        container(label)
-            .padding(60)
-            .style(|theme: &Theme| container::Style {
-                border: Border {
-                    color: theme.extended_palette().background.strong.color,
-                    width: 2.0,
-                    radius: 4.0.into(),
-                },
-                ..container::Style::default()
-            }),
-    )
-    .padding(40)
-    .into()
-}
-
-/// Shared translucent-panel styling for the help and confirm overlays.
-fn overlay_box(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
-    container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.96,
-            ..palette.background.weak.color
-        })),
-        border: Border {
-            color: palette.background.strong.color,
-            width: 1.0,
-            radius: 8.0.into(),
-        },
-        ..container::Style::default()
-    }
-}
-
-fn help_overlay() -> Element<'static, Message> {
-    let title = text("Keyboard Shortcuts").size(24);
-    let rows = SHORTCUTS.iter().fold(column![].spacing(10), |col, (keys, desc)| {
-        col.push(
-            row![
-                text(*keys).size(16).width(Length::Fixed(90.0)),
-                text(*desc).size(16),
-            ]
-            .spacing(20),
-        )
-    });
-
-    center(
-        container(column![title, rows].spacing(18))
-            .padding(28)
-            .style(overlay_box),
-    )
-    .into()
-}
-
-fn confirm_overlay(count: usize) -> Element<'static, Message> {
-    let message = if count == 1 {
-        "Delete 1 photo?".to_string()
-    } else {
-        format!("Delete {count} photos?")
-    };
-    center(
-        container(
-            column![
-                text(message).size(22),
-                text("y / Enter — yes      n / Esc — no").size(14),
-            ]
-            .spacing(18)
-            .align_x(Horizontal::Center),
-        )
-        .padding(28)
-        .style(overlay_box),
-    )
-    .into()
 }

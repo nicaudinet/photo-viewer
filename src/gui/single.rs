@@ -1,7 +1,7 @@
 //! The single view: one fit-to-window image with favourite/delete overlays,
 //! navigation, rotate, save-favourites, and the delete-all confirmation.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use iced::widget::{image, Space, Stack};
 use iced::{ContentFit, Element, Length, Task};
@@ -127,7 +127,7 @@ impl SingleState {
         let path = self.library.current().clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || decode_large(&path))
+                tokio::task::spawn_blocking(move || crate::image::full(&path))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
@@ -141,7 +141,7 @@ impl SingleState {
         let path = self.library.current().clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || rotate_file(&path, clockwise))
+                tokio::task::spawn_blocking(move || crate::image::rotate_in_place(&path, clockwise))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
@@ -213,24 +213,3 @@ impl SingleState {
     }
 }
 
-/// Rotate the image at `path` 90° and overwrite it, preserving its format (the
-/// destination extension picks the encoder). `clockwise` matches `Shift+R`; the
-/// anticlockwise case matches the Python `Image.rotate(90)`. Runs off-thread.
-fn rotate_file(path: &Path, clockwise: bool) -> Result<(), String> {
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let rotated = if clockwise {
-        img.rotate90()
-    } else {
-        img.rotate270()
-    };
-    rotated.save(path).map_err(|e| e.to_string())
-}
-
-/// Decode an image to full-res RGBA. Runs on a blocking thread; the returned
-/// handle is plain data, safe on the GUI thread.
-fn decode_large(path: &Path) -> Result<image::Handle, String> {
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Ok(image::Handle::from_rgba(width, height, rgba.into_raw()))
-}

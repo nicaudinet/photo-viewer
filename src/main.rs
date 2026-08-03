@@ -19,6 +19,7 @@
 // still-unused surface for now.
 #[allow(dead_code)]
 mod library;
+mod image;
 mod platform;
 #[allow(dead_code)]
 mod pointed_list;
@@ -30,7 +31,8 @@ use std::time::Duration;
 
 use iced::keyboard;
 use iced::keyboard::key::Named;
-use iced::widget::{image, Stack};
+use iced::widget::image::Handle as ImageHandle;
+use iced::widget::Stack;
 use iced::window::Mode;
 use iced::{Element, Size, Subscription, Task, Theme};
 
@@ -93,8 +95,8 @@ struct App {
     /// The window starts hidden (`visible: false`) and is revealed on its first
     /// rendered frame to avoid a white startup flash; this latches that reveal.
     revealed: bool,
-    star_icon: image::Handle,
-    delete_icon: image::Handle,
+    star_icon: ImageHandle,
+    delete_icon: ImageHandle,
 }
 
 #[derive(Debug, Clone)]
@@ -142,8 +144,8 @@ impl App {
             help_open: false,
             fullscreen: false,
             revealed: false,
-            star_icon: image::Handle::from_bytes(STAR_ICON.to_vec()),
-            delete_icon: image::Handle::from_bytes(DELETE_ICON.to_vec()),
+            star_icon: ImageHandle::from_bytes(STAR_ICON.to_vec()),
+            delete_icon: ImageHandle::from_bytes(DELETE_ICON.to_vec()),
         };
         let task = match std::env::args().nth(1) {
             Some(arg) => app.open(PathBuf::from(arg)),

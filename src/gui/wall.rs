@@ -2,7 +2,7 @@
 //! favourites/to-delete visibility filter and click-to-open.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use iced::widget::{button, container, image, responsive, scrollable, text, Column, Row, Stack};
 use iced::{Background, Border, Element, Length, Shadow, Size, Task, Theme};
@@ -95,9 +95,11 @@ impl WallState {
                 let key = p.clone();
                 Task::perform(
                     async move {
-                        tokio::task::spawn_blocking(move || decode_thumb(&path))
-                            .await
-                            .unwrap_or_else(|e| Err(e.to_string()))
+                        tokio::task::spawn_blocking(move || {
+                            crate::image::thumbnail(&path, THUMB_WIDTH)
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
                     },
                     move |result| {
                         Message::Wall(WallMsg::ThumbDecoded {
@@ -262,17 +264,4 @@ fn placeholder_style(theme: &Theme) -> container::Style {
         background: Some(Background::Color(palette.background.weak.color)),
         ..container::Style::default()
     }
-}
-
-/// Decode + downscale to a `THUMB_WIDTH`-wide thumbnail. Returns the handle and
-/// its scaled height (for masonry column bookkeeping).
-fn decode_thumb(path: &Path) -> Result<(image::Handle, u32), String> {
-    use ::image::GenericImageView;
-    let img = ::image::open(path).map_err(|e| e.to_string())?;
-    let (w, h) = img.dimensions();
-    let target_h = (((h as f32) / (w as f32)) * THUMB_WIDTH as f32).round().max(1.0) as u32;
-    let resized = img.resize(THUMB_WIDTH, target_h, ::image::imageops::FilterType::Triangle);
-    let rgba = resized.to_rgba8();
-    let (rw, rh) = rgba.dimensions();
-    Ok((image::Handle::from_rgba(rw, rh, rgba.into_raw()), rh))
 }

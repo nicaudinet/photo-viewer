@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use iced::widget::{button, container, image, responsive, scrollable, text, Column, Row, Stack};
-use iced::{Background, Border, Element, Length, Shadow, Size, Task, Theme};
+use iced::theme::palette::lighten;
+use iced::{Background, Border, Color, Element, Length, Shadow, Size, Task, Theme};
 
 use super::corner_icon;
 use crate::library::Library;
@@ -14,7 +15,22 @@ use crate::Message;
 
 /// Thumbnail column width and inter-item spacing (matches the Python wall).
 const THUMB_WIDTH: u32 = 300;
-const WALL_SPACING: f32 = 20.0;
+/// Inter-tile spacing, and the outer padding of the wall (the layout maths in
+/// [`WallState::build_wall`] assumes the two are equal).
+const WALL_SPACING: f32 = 12.0;
+/// Width of the selection ring drawn around the current thumbnail.
+///
+/// `button` fills its border quad at its full bounds and *then* draws the
+/// content on top, so a zero-padding button hides its own border behind an
+/// opaque child. Every thumbnail therefore carries this much padding — the ring
+/// is only made visible (rather than added) when the thumbnail is selected, so
+/// selection never reflows the wall.
+const SEL_BORDER: f32 = 4.0;
+/// A thumbnail plus its selection ring: what the masonry actually places.
+const TILE_WIDTH: f32 = THUMB_WIDTH as f32 + 2.0 * SEL_BORDER;
+/// How far the selection ring is lifted off the theme's primary colour (OKLCH
+/// lightness). On the dark theme this takes `#5865F2` to `#8B8BFF`.
+const SEL_LIGHTEN: f32 = 0.25;
 
 /// Max thumbnail decodes running at once. A wall of N images no longer fires N
 /// tasks up front; the scheduler keeps at most this many in flight and refills
@@ -206,7 +222,10 @@ impl WallState {
             .filter(|(_, p)| self.is_displayed(p))
             .collect();
 
-        let item_width = WALL_SPACING + THUMB_WIDTH as f32;
+        // `n` tiles need `n * TILE_WIDTH + (n + 1) * WALL_SPACING` (spacing
+        // between them, plus the equal outer padding) — hence the single
+        // `WALL_SPACING` subtracted before the division.
+        let item_width = WALL_SPACING + TILE_WIDTH;
         let col_count = (((size.width - WALL_SPACING) / item_width).floor() as usize).max(1);
 
         let mut buckets: Vec<Vec<Element<'a, Message>>> =
@@ -223,7 +242,7 @@ impl WallState {
                 .unwrap_or(0);
             let thumb_height = self.thumbs.get(path).map(|t| t.height as f32).unwrap_or(THUMB_WIDTH as f32);
             buckets[col].push(self.thumb_element(index, path, current, star_icon, delete_icon));
-            heights[col] += thumb_height + WALL_SPACING;
+            heights[col] += thumb_height + 2.0 * SEL_BORDER + WALL_SPACING;
         }
 
         let columns: Vec<Element<'a, Message>> = buckets
@@ -231,7 +250,7 @@ impl WallState {
             .map(|items| {
                 Column::with_children(items)
                     .spacing(WALL_SPACING)
-                    .width(Length::Fixed(THUMB_WIDTH as f32))
+                    .width(Length::Fixed(TILE_WIDTH))
                     .into()
             })
             .collect();
@@ -288,7 +307,8 @@ impl WallState {
 
         let selected = index == current;
         button(body)
-            .padding(0)
+            // Inset the content so the selection ring isn't drawn over it.
+            .padding(SEL_BORDER)
             .on_press(Message::ThumbClicked(index))
             .style(move |theme: &Theme, _status| thumb_button_style(theme, selected))
             .into()
@@ -348,14 +368,18 @@ fn thumb_button_style(theme: &Theme, selected: bool) -> button::Style {
     button::Style {
         background: None,
         text_color: palette.background.base.text,
-        border: if selected {
-            Border {
-                color: palette.primary.strong.color,
-                width: 4.0,
-                radius: 0.0.into(),
-            }
-        } else {
-            Border::default()
+        // Always the same width — only the colour changes — so selecting a
+        // thumbnail never shifts the masonry.
+        border: Border {
+            color: if selected {
+                // `primary.strong` is only a 0.10 lift off the base; take a
+                // bigger one so the ring reads clearly against dark thumbnails.
+                lighten(palette.primary.base.color, SEL_LIGHTEN)
+            } else {
+                Color::TRANSPARENT
+            },
+            width: SEL_BORDER,
+            radius: 0.0.into(),
         },
         shadow: Shadow::default(),
         // 0.14 added pixel-grid snapping; keep the non-crisp default.

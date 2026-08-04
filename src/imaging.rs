@@ -189,6 +189,17 @@ mod tests {
     }
 
     #[test]
+    fn rotate_in_place_swaps_the_dimensions() {
+        // A size no other test writes: this one mutates its fixture.
+        let path = write_test_image(640, 480, "jpg");
+        rotate_in_place(&path, true).unwrap();
+        assert_eq!(thumb_height(&path, 300), Some(400.0)); // 300 * 640/480
+        // Back to the original orientation, and the thumbnail with it.
+        rotate_in_place(&path, false).unwrap();
+        assert_eq!(thumb_height(&path, 300), Some(225.0)); // 300 * 480/640
+    }
+
+    #[test]
     fn thumb_height_is_none_for_unreadable_files() {
         assert_eq!(thumb_height(Path::new("/nonexistent.jpg"), 300), None);
     }

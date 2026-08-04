@@ -6,8 +6,8 @@
 //!   overlays, `Cmd+D` delete-all (confirm overlay), `Cmd+F` save-favourites.
 //! - Wall view: async 300px thumbnails laid out shortest-column masonry in a
 //!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
-//!   (scrolling it into view), Enter or a click to open it, `f`/`d` filter to
-//!   favourites/to-delete only.
+//!   (scrolling it into view), Enter or a click to open it, `r`/`Shift+R` to
+//!   rotate it on disk, `f`/`d` filter to favourites/to-delete only.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
@@ -119,6 +119,9 @@ enum Message {
     KeyD,
     /// Arrows / `hjkl`: previous-next (single) or grid movement (wall).
     Nav(Dir),
+    /// `r` / `Shift+R`: rotate the current image (single) or the selected
+    /// thumbnail (wall). Both write the file to disk.
+    Rotate { clockwise: bool },
     /// Enter: confirm a pending delete (single) or open the selection (wall).
     Activate,
     /// The window resized: re-measure the wall's viewport if it is on screen.
@@ -348,6 +351,18 @@ impl App {
                 Screen::Wall(w) => w.update(WallMsg::Nav(dir)),
                 Screen::Empty => Task::none(),
             },
+            Message::Rotate { clockwise } => match &mut self.screen {
+                Screen::Single(s) => {
+                    let msg = if clockwise {
+                        SingleMsg::RotateClockwise
+                    } else {
+                        SingleMsg::RotateAnticlockwise
+                    };
+                    s.update(msg, &mut self.generation)
+                }
+                Screen::Wall(w) => w.update(WallMsg::Rotate { clockwise }),
+                Screen::Empty => Task::none(),
+            },
             Message::Activate => match &self.screen {
                 // In the wall, Enter opens whatever the ring is around.
                 Screen::Wall(w) => {
@@ -452,13 +467,11 @@ impl App {
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
                 keyboard::Key::Character("o") => Some(Message::OpenFile),
-                keyboard::Key::Character("R") => Some(Message::Single(SingleMsg::RotateClockwise)),
+                keyboard::Key::Character("R") => Some(Message::Rotate { clockwise: true }),
                 keyboard::Key::Character("r") if modifiers.shift() => {
-                    Some(Message::Single(SingleMsg::RotateClockwise))
+                    Some(Message::Rotate { clockwise: true })
                 }
-                keyboard::Key::Character("r") => {
-                    Some(Message::Single(SingleMsg::RotateAnticlockwise))
-                }
+                keyboard::Key::Character("r") => Some(Message::Rotate { clockwise: false }),
                 // `key` is the base layout key (no modifiers), so Shift+/ shows
                 // up as "/" here; the actual "?" lives in `modified_key`.
                 _ if modified_key.as_ref() == keyboard::Key::Character("?") => {

@@ -1,6 +1,7 @@
 //! The single view: one fit-to-window image with favourite/delete overlays,
 //! navigation, rotate, save-favourites, and the delete-all confirmation.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use iced::widget::{image, Space, Stack};
@@ -25,7 +26,12 @@ pub(crate) enum SingleMsg {
     /// `Shift+R`: rotate the current image clockwise, writing it to disk.
     RotateClockwise,
     /// Result of a rotate: on success, re-decode the (now rotated) file.
-    Rotated { result: Result<(), String> },
+    /// Carries its own path — the view may have moved on while the write was
+    /// in flight.
+    Rotated {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
     /// `Cmd+F`: pick a directory to copy the favourites into.
     SaveFavourites,
     SaveFavDirPicked(Option<PathBuf>),
@@ -45,6 +51,9 @@ pub(crate) struct SingleState {
     large: Option<image::Handle>,
     /// `Some(count)` while the delete-all confirmation overlay is showing.
     pub(crate) confirm_delete: Option<usize>,
+    /// Paths with a rotate write in flight. Holding the key down would
+    /// otherwise race two read-modify-writes against the same file.
+    rotating: HashSet<PathBuf>,
 }
 
 impl SingleState {
@@ -53,6 +62,7 @@ impl SingleState {
             library,
             large: None,
             confirm_delete: None,
+            rotating: HashSet::new(),
         }
     }
 
@@ -76,15 +86,22 @@ impl SingleState {
             }
             SingleMsg::RotateAnticlockwise => self.rotate(false),
             SingleMsg::RotateClockwise => self.rotate(true),
-            SingleMsg::Rotated { result } => match result {
-                // The file changed on disk: re-decode the current image. (Wall
-                // thumbnails are rebuilt on next entry, so none is stale here.)
-                Ok(()) => self.decode_current(generation),
-                Err(e) => {
-                    eprintln!("Rotate failed: {e}");
-                    Task::none()
+            SingleMsg::Rotated { path, result } => {
+                self.rotating.remove(&path);
+                match result {
+                    // The file changed on disk: re-decode it, unless the view
+                    // has since moved to a different image. (Wall thumbnails
+                    // are rebuilt on next entry, so none is stale here.)
+                    Ok(()) if self.library.current() == &path => {
+                        self.decode_current(generation)
+                    }
+                    Ok(()) => Task::none(),
+                    Err(e) => {
+                        eprintln!("Rotate failed: {e}");
+                        Task::none()
+                    }
                 }
-            },
+            }
             SingleMsg::SaveFavourites => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -136,9 +153,13 @@ impl SingleState {
     }
 
     /// Rotate the current image 90° (clockwise if `clockwise`, else anti-),
-    /// writing the result back to its file off-thread.
-    fn rotate(&self, clockwise: bool) -> Task<Message> {
-        let path = self.library.current().clone();
+    /// writing the result back to its file off-thread. Ignored while a rotate
+    /// of the same file is already running.
+    fn rotate(&mut self, clockwise: bool) -> Task<Message> {
+        let Some(path) = self.claim_rotate() else {
+            return Task::none();
+        };
+        let key = path.clone();
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
@@ -147,8 +168,21 @@ impl SingleState {
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
-            move |result| Message::Single(SingleMsg::Rotated { result }),
+            move |result| {
+                Message::Single(SingleMsg::Rotated {
+                    path: key.clone(),
+                    result,
+                })
+            },
         )
+    }
+
+    /// Claim the current path for a rotate, or `None` if one is already
+    /// writing it — two concurrent read-modify-writes of the same file both
+    /// read the pre-rotation pixels, so one of the two turns is lost.
+    fn claim_rotate(&mut self) -> Option<PathBuf> {
+        let path = self.library.current().clone();
+        self.rotating.insert(path.clone()).then_some(path)
     }
 
     /// Toggle the current image's favourite flag. Un-favouriting also
@@ -212,6 +246,98 @@ impl SingleState {
             Some(handle) => Stack::with_children(vec![base, corner_icon(handle)]).into(),
             None => base,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A single view over `n` images, pointed at the first.
+    fn single(n: usize) -> SingleState {
+        let files: Vec<PathBuf> = (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect();
+        SingleState::new(Library {
+            paths: crate::pointed_list::PointedList::new(files).unwrap(),
+            favourites: HashSet::new(),
+            to_delete: HashSet::new(),
+            image_dir: PathBuf::from("/imgs"),
+            cache_dir: PathBuf::from("/imgs/.cache"),
+            favourites_file: PathBuf::from("/imgs/.cache/favourites"),
+            to_delete_file: PathBuf::from("/imgs/.cache/to_delete"),
+        })
+    }
+
+    #[test]
+    fn a_second_rotate_is_ignored_while_one_is_writing() {
+        let mut state = single(2);
+        let path = state.library.current().clone();
+
+        assert_eq!(state.claim_rotate(), Some(path.clone()));
+        // Holding `r` down must not race two writes against the same file:
+        // both would read the pre-rotation pixels and one turn would be lost.
+        assert_eq!(state.claim_rotate(), None);
+
+        // The claim is released once the write lands.
+        let mut generation = 0;
+        let _ = state.update(
+            SingleMsg::Rotated {
+                path: path.clone(),
+                result: Ok(()),
+            },
+            &mut generation,
+        );
+        assert_eq!(state.claim_rotate(), Some(path));
+    }
+
+    #[test]
+    fn rotating_a_different_image_is_not_blocked() {
+        let mut state = single(2);
+        assert!(state.claim_rotate().is_some());
+        // A rotate of the *next* image is unrelated work; only same-file
+        // writes race.
+        state.library.next();
+        assert!(state.claim_rotate().is_some());
+    }
+
+    #[test]
+    fn a_rotate_re_decodes_the_image_it_rotated() {
+        let mut state = single(2);
+        let path = state.library.current().clone();
+        let mut generation = 0;
+        let _ = state.update(SingleMsg::Rotated { path, result: Ok(()) }, &mut generation);
+        // `decode_current` bumps the generation; nothing else here does.
+        assert_eq!(generation, 1);
+    }
+
+    #[test]
+    fn a_rotate_landing_after_navigating_away_does_not_re_decode() {
+        let mut state = single(2);
+        let path = state.library.current().clone();
+        state.library.next();
+
+        let mut generation = 0;
+        let _ = state.update(SingleMsg::Rotated { path, result: Ok(()) }, &mut generation);
+        // Re-decoding here would replace the image on screen with the one the
+        // user just navigated off.
+        assert_eq!(generation, 0);
+    }
+
+    #[test]
+    fn a_failed_rotate_releases_the_claim_without_decoding() {
+        let mut state = single(2);
+        let path = state.library.current().clone();
+        assert_eq!(state.claim_rotate(), Some(path.clone()));
+
+        let mut generation = 0;
+        let _ = state.update(
+            SingleMsg::Rotated {
+                path: path.clone(),
+                result: Err("nope".into()),
+            },
+            &mut generation,
+        );
+        assert_eq!(generation, 0);
+        assert_eq!(state.claim_rotate(), Some(path));
     }
 }
 

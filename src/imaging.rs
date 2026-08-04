@@ -39,6 +39,44 @@ pub(crate) fn thumbnail(path: &Path, width: u32) -> Result<(image::Handle, u32),
     Ok((to_handle(resized), height))
 }
 
+/// Read every path's on-disk dimensions and return the height each would have
+/// as a `width`-wide thumbnail, off the GUI thread.
+///
+/// Only the file header is parsed — no pixels are decoded — so this is orders
+/// of magnitude cheaper than [`thumbnail`] and lands long before the decodes
+/// do. The wall uses it to lay its masonry out once instead of reflowing as
+/// each thumbnail arrives. Unreadable files are skipped; the wall falls back to
+/// a square guess for anything missing.
+pub(crate) async fn thumb_heights_async(paths: Vec<PathBuf>, width: u32) -> Vec<(PathBuf, f32)> {
+    tokio::task::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .filter_map(|path| {
+                let height = thumb_height(&path, width)?;
+                Some((path, height))
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// The height a `width`-wide thumbnail of `path` will have, from its header
+/// alone. Deliberately mirrors [`thumbnail`]'s arithmetic, so the masonry
+/// doesn't shift when the real decode lands. `None` if the header is unreadable.
+fn thumb_height(path: &Path, width: u32) -> Option<f32> {
+    let (w, h) = ::image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    if w == 0 {
+        return None;
+    }
+    Some((((h as f32) / (w as f32)) * width as f32).round().max(1.0))
+}
+
 /// Decode an image to full-res RGBA (single view).
 pub(crate) fn full(path: &Path) -> Result<image::Handle, String> {
     let img = ::image::open(path).map_err(|e| e.to_string())?;
@@ -138,6 +176,21 @@ mod tests {
             }
             _ => panic!("expected an rgba handle"),
         }
+    }
+
+    #[test]
+    fn thumb_height_matches_the_decoded_thumbnail() {
+        // The wall lays out from the header-derived height and must not shift
+        // when the decode replaces it, so the two have to agree exactly.
+        let path = write_test_image(4000, 3000, "jpg");
+        let (_handle, decoded) = thumbnail(&path, 300).unwrap();
+        assert_eq!(thumb_height(&path, 300), Some(decoded as f32));
+        assert_eq!(thumb_height(&path, 300), Some(225.0));
+    }
+
+    #[test]
+    fn thumb_height_is_none_for_unreadable_files() {
+        assert_eq!(thumb_height(Path::new("/nonexistent.jpg"), 300), None);
     }
 
     #[test]

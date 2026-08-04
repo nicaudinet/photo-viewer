@@ -17,8 +17,11 @@ const ICON_MARGIN: f32 = 10.0;
 
 /// Shown in the help overlay, in press-order.
 const SHORTCUTS: &[(&str, &str)] = &[
-    ("\u{2190} / h", "Previous image"),
-    ("\u{2192} / l", "Next image"),
+    ("\u{2190} / h", "Previous image / left"),
+    ("\u{2192} / l", "Next image / right"),
+    ("\u{2191} / k", "Wall: up a row"),
+    ("\u{2193} / j", "Wall: down a row"),
+    ("\u{21b5}", "Wall: open selected"),
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
     ("o", "Open file"),

@@ -11,8 +11,9 @@ path = "src/main.rs"
 [dependencies]
 # `image` feature: decode PNG/JPEG into iced image handles.
 # `tokio` feature: async runtime for off-thread decode Tasks.
-# `lazy` gives the `responsive` widget (width-aware masonry layout in wall view).
-iced = { version = "0.14", features = ["image", "tokio", "lazy"] }
+# `advanced` exposes `widget::Operation`, used to read the wall's laid-out
+# viewport size back into `update` (see gui::wall::measure).
+iced = { version = "0.14", features = ["image", "tokio", "advanced"] }
 # Decode PNG/JPEG to RGBA off the GUI thread (fed into an iced image Handle).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # Direct JPEG decoder for scale-on-decode thumbnails: its `scale()` does the

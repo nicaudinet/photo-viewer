@@ -5,8 +5,9 @@
 //!   (writes the file to disk), `f`/`d` favourite/delete toggles + icon
 //!   overlays, `Cmd+D` delete-all (confirm overlay), `Cmd+F` save-favourites.
 //! - Wall view: async 300px thumbnails laid out shortest-column masonry in a
-//!   vertical scroll, current image highlighted, click a thumbnail to open it,
-//!   `f`/`d` filter to favourites/to-delete only.
+//!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
+//!   (scrolling it into view), Enter or a click to open it, `f`/`d` filter to
+//!   favourites/to-delete only.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
@@ -37,7 +38,7 @@ use iced::{Element, Size, Subscription, Task, Theme};
 
 use gui::empty::empty_view;
 use gui::single::{SingleMsg, SingleState};
-use gui::wall::{WallMsg, WallState};
+use gui::wall::{Dir, WallMsg, WallState};
 use gui::{confirm_overlay, help_overlay};
 use library::{load_library, Library, IMAGE_EXTENSIONS};
 
@@ -116,6 +117,14 @@ enum Message {
     KeyF,
     /// `d`: delete toggle (single) or to-delete filter (wall).
     KeyD,
+    /// Arrows / `hjkl`: previous-next (single) or grid movement (wall).
+    Nav(Dir),
+    /// Enter: confirm a pending delete (single) or open the selection (wall).
+    Activate,
+    /// The window resized: re-measure the wall's viewport if it is on screen.
+    /// The event's own size is the *window's*, not the scroll viewport's, so it
+    /// is only a trigger — `gui::wall::measure` reads the real number back.
+    WallMeasure,
 
     // Transitions between screens — owned by `App` because a per-screen update
     // can't reassign `self.screen`.
@@ -178,7 +187,7 @@ impl App {
                 // A directory: show the wall of all its images.
                 None => {
                     let mut wall = WallState::new(lib);
-                    let task = wall.schedule();
+                    let task = wall.enter();
                     self.screen = Screen::Wall(wall);
                     task
                 }
@@ -192,6 +201,40 @@ impl App {
                 self.screen = Screen::Empty;
                 Task::none()
             }
+        }
+    }
+
+    /// Leave the wall and open `index` in the single view. Shared by clicking a
+    /// thumbnail and by pressing Enter on the selection.
+    fn open_index(&mut self, index: usize) -> Task<Message> {
+        match std::mem::replace(&mut self.screen, Screen::Empty) {
+            Screen::Wall(w) => {
+                let mut library = w.library;
+                library.goto(index);
+                let single = SingleState::new(library);
+                let task = single.decode_current(&mut self.generation);
+                self.screen = Screen::Single(single);
+                task
+            }
+            // Only the wall opens by index; restore anything else.
+            other => {
+                self.screen = other;
+                Task::none()
+            }
+        }
+    }
+
+    /// Accept a pending delete confirmation, if one is open.
+    fn confirm_yes(&mut self) -> Task<Message> {
+        let confirmed = if let Screen::Single(s) = &mut self.screen {
+            s.confirm_delete.take().is_some()
+        } else {
+            false
+        };
+        if confirmed {
+            self.do_delete_all()
+        } else {
+            Task::none()
         }
     }
 
@@ -241,7 +284,11 @@ impl App {
         if confirming
             && !matches!(
                 message,
-                Message::ConfirmYes | Message::ConfirmNo | Message::Escape | Message::Quit
+                Message::ConfirmYes
+                    | Message::ConfirmNo
+                    | Message::Activate
+                    | Message::Escape
+                    | Message::Quit
             )
         {
             return Task::none();
@@ -290,13 +337,37 @@ impl App {
                 Screen::Wall(w) => w.update(WallMsg::FilterToDelete),
                 Screen::Empty => Task::none(),
             },
+            Message::Nav(dir) => match &mut self.screen {
+                // The single view is a flat sequence: only left/right mean
+                // anything there.
+                Screen::Single(s) => match dir {
+                    Dir::Left => s.update(SingleMsg::Prev, &mut self.generation),
+                    Dir::Right => s.update(SingleMsg::Next, &mut self.generation),
+                    Dir::Up | Dir::Down => Task::none(),
+                },
+                Screen::Wall(w) => w.update(WallMsg::Nav(dir)),
+                Screen::Empty => Task::none(),
+            },
+            Message::Activate => match &self.screen {
+                // In the wall, Enter opens whatever the ring is around.
+                Screen::Wall(w) => {
+                    let index = w.library.paths.index();
+                    self.open_index(index)
+                }
+                // Elsewhere it only means "yes" to the confirm overlay.
+                _ => self.confirm_yes(),
+            },
+            Message::WallMeasure => match &self.screen {
+                Screen::Wall(_) => gui::wall::measure(),
+                _ => Task::none(),
+            },
 
             // Move the library across to the other view. The losing view's
             // decode cache is dropped, so the new view always decodes fresh.
             Message::ToggleWall => match std::mem::replace(&mut self.screen, Screen::Empty) {
                 Screen::Single(s) => {
                     let mut wall = WallState::new(s.library);
-                    let task = wall.schedule();
+                    let task = wall.enter();
                     self.screen = Screen::Wall(wall);
                     task
                 }
@@ -328,21 +399,7 @@ impl App {
                     None => Task::none(),
                 }
             }
-            Message::ThumbClicked(index) => match std::mem::replace(&mut self.screen, Screen::Empty) {
-                Screen::Wall(w) => {
-                    let mut library = w.library;
-                    library.goto(index);
-                    let single = SingleState::new(library);
-                    let task = single.decode_current(&mut self.generation);
-                    self.screen = Screen::Single(single);
-                    task
-                }
-                // Only the wall emits `ThumbClicked`; restore anything else.
-                other => {
-                    self.screen = other;
-                    Task::none()
-                }
-            },
+            Message::ThumbClicked(index) => self.open_index(index),
             Message::DeleteAll => {
                 if let Screen::Single(s) = &mut self.screen {
                     let count = s.library.to_delete.len();
@@ -352,18 +409,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::ConfirmYes => {
-                let confirmed = if let Screen::Single(s) = &mut self.screen {
-                    s.confirm_delete.take().is_some()
-                } else {
-                    false
-                };
-                if confirmed {
-                    self.do_delete_all()
-                } else {
-                    Task::none()
-                }
-            }
+            Message::ConfirmYes => self.confirm_yes(),
             Message::ConfirmNo => {
                 if let Screen::Single(s) = &mut self.screen {
                     s.confirm_delete = None;
@@ -392,12 +438,16 @@ impl App {
             };
             let cmd = modifiers.command();
             match key.as_ref() {
-                keyboard::Key::Named(Named::ArrowRight) => Some(Message::Single(SingleMsg::Next)),
-                keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Single(SingleMsg::Prev)),
-                keyboard::Key::Named(Named::Enter) => Some(Message::ConfirmYes),
+                keyboard::Key::Named(Named::ArrowRight) => Some(Message::Nav(Dir::Right)),
+                keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Nav(Dir::Left)),
+                keyboard::Key::Named(Named::ArrowUp) => Some(Message::Nav(Dir::Up)),
+                keyboard::Key::Named(Named::ArrowDown) => Some(Message::Nav(Dir::Down)),
+                keyboard::Key::Named(Named::Enter) => Some(Message::Activate),
                 keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
-                keyboard::Key::Character("l") => Some(Message::Single(SingleMsg::Next)),
-                keyboard::Key::Character("h") => Some(Message::Single(SingleMsg::Prev)),
+                keyboard::Key::Character("l") => Some(Message::Nav(Dir::Right)),
+                keyboard::Key::Character("h") => Some(Message::Nav(Dir::Left)),
+                keyboard::Key::Character("k") => Some(Message::Nav(Dir::Up)),
+                keyboard::Key::Character("j") => Some(Message::Nav(Dir::Down)),
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),
@@ -424,7 +474,9 @@ impl App {
             }
         });
 
-        let mut subs = vec![keys];
+        // A resize changes the wall's column count, so the layout `update` uses
+        // for navigation has to be re-measured against the new tree.
+        let mut subs = vec![keys, iced::window::resize_events().map(|_| Message::WallMeasure)];
 
         // The window starts hidden; reveal it on its first rendered frame.
         // `frames()` only listens for `RedrawRequested` (it adds no redraws of

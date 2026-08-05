@@ -144,6 +144,48 @@ impl Library {
     pub fn clear_selection(&mut self) {
         self.selection.clear();
     }
+
+    // --- Removal ---
+
+    /// Drop `gone` from the library, landing the cursor on the surviving image
+    /// nearest to where it was.
+    ///
+    /// Nearest by *old* position, not by wrapping the way the cursor does when
+    /// it navigates: after deleting a run, the eye is where the run was, so
+    /// that is where the cursor belongs. Anything removed is dropped from the
+    /// selection too.
+    ///
+    /// Returns `false` if nothing is left, at which point the caller has no
+    /// library to show — `PointedList` cannot be empty.
+    pub fn remove(&mut self, gone: &HashSet<PathBuf>) -> bool {
+        let was = self.paths.index();
+        let survivors: Vec<(usize, PathBuf)> = self
+            .paths
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !gone.contains(*p))
+            .map(|(i, p)| (i, p.clone()))
+            .collect();
+
+        let landing = survivors
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, (old, _))| old.abs_diff(was))
+            .map(|(new, _)| new)
+            .unwrap_or(0);
+
+        let kept: Vec<PathBuf> = survivors.into_iter().map(|(_, p)| p).collect();
+        self.selection.retain(|p| !gone.contains(p));
+
+        match PointedList::new(kept) {
+            Some(mut paths) => {
+                paths.goto(landing);
+                self.paths = paths;
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// What a painted range does to the selection when it is committed.
@@ -386,6 +428,66 @@ mod tests {
         lib.select_all();
         lib.clear_selection();
         assert!(lib.selection.is_empty());
+    }
+
+    // --- Removal ---
+
+    #[test]
+    fn remove_drops_the_images_and_deselects_them() {
+        let f = fixture("rm-basic");
+        let mut lib = f.lib.clone();
+        lib.select_all();
+        let gone: HashSet<PathBuf> = [f.images[0].clone()].into_iter().collect();
+
+        assert!(lib.remove(&gone));
+        assert_eq!(lib.paths.len(), 2);
+        assert!(!lib.paths.contains(&f.images[0]));
+        assert_eq!(selected(&lib), vec![f.images[1].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn remove_lands_the_cursor_on_the_nearest_survivor() {
+        let f = fixture("rm-cursor");
+        let mut lib = f.lib.clone();
+        lib.goto(2);
+        let gone: HashSet<PathBuf> = [f.images[2].clone()].into_iter().collect();
+
+        assert!(lib.remove(&gone));
+        // The image under the cursor went, so the cursor takes the nearest
+        // survivor by old position — not a wrap back round to the front.
+        assert_eq!(lib.current(), &f.images[1]);
+    }
+
+    #[test]
+    fn remove_keeps_the_cursor_on_a_surviving_image() {
+        let f = fixture("rm-cursor-kept");
+        let mut lib = f.lib.clone();
+        lib.goto(2);
+        let gone: HashSet<PathBuf> = [f.images[0].clone()].into_iter().collect();
+
+        assert!(lib.remove(&gone));
+        // Still the same photo, at its new index.
+        assert_eq!(lib.current(), &f.images[2]);
+        assert_eq!(lib.paths.index(), 1);
+    }
+
+    #[test]
+    fn removing_everything_reports_an_empty_library() {
+        let f = fixture("rm-all");
+        let mut lib = f.lib.clone();
+        let gone: HashSet<PathBuf> = f.images.iter().cloned().collect();
+        // `PointedList` cannot be empty, so the caller has to hear about this.
+        assert!(!lib.remove(&gone));
+    }
+
+    #[test]
+    fn removing_nothing_changes_nothing() {
+        let f = fixture("rm-none");
+        let mut lib = f.lib.clone();
+        lib.goto(1);
+        assert!(lib.remove(&HashSet::new()));
+        assert_eq!(lib.paths.len(), 3);
+        assert_eq!(lib.paths.index(), 1);
     }
 
     // --- load_library ---

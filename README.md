@@ -75,7 +75,28 @@ it means the same thing whatever the window width.
 | `Space` | Select or deselect the image under the cursor |
 | `Cmd+A` | Select every image |
 | `i` | Invert the selection |
-| `Esc` | Cancel the painted range, then clear the selection |
+| `Esc` | Stop a running operation, then cancel the range, then clear |
+
+#### Acting on a selection
+
+Every operation applies to each selected image independently.
+
+| Key | Action |
+|-----|--------|
+| `r` / `Shift+R` | Rotate every selected image |
+| `d` | Move every selected image to the trash (asks first) |
+
+Files are moved to the system trash rather than unlinked — there is no undo in
+the app, so a mistaken selection should be a nuisance rather than a
+catastrophe. Deleting asks for confirmation first.
+
+Work is dispatched a few files at a time rather than all at once, the same way
+thumbnail decodes are, and a bar along the bottom shows progress. `Esc` stops
+it: nothing further is started, but files already being written are allowed to
+finish, since abandoning a write half-done is how a photo gets corrupted.
+
+While a range is being painted, `r` and `d` do nothing — an uncommitted range
+has no settled meaning, so there is no honest answer to "which images?".
 
 The mouse is modal in the same way. With nothing selected a plain click still
 opens the image; `Cmd`-click is the way into a selection without touching the

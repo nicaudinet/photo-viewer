@@ -315,9 +315,11 @@ Generalise the confirm overlay at the same time: move it out of
 `SingleState::confirm_delete` into `App { confirm: Option<Pending> }` carrying a
 prompt string, since deletion now originates in the wall.
 
-`w` from `SELECT` opens the single view on the **first selected image** with the
-selection preserved and badged; single-view operations still touch only that
-image.
+~~`w` from `SELECT` opens the single view on the **first selected image**~~ —
+dropped. That was written when `SELECT` had no cursor; now that the cursor moves
+freely there, `w` opens whatever the cursor is on, which is where the user is
+actually looking. The selection is preserved either way, and single-view
+operations still touch only the current image.
 
 ## Phase 5 — Move and copy to a folder
 

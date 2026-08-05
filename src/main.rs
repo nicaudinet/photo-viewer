@@ -41,7 +41,7 @@ use iced::window::Mode;
 use iced::{Element, Size, Subscription, Task, Theme};
 
 use gui::empty::empty_view;
-use gui::help_overlay;
+use gui::{confirm_overlay, help_overlay};
 use gui::single::{SingleMsg, SingleState};
 use gui::wall::{Click, Dir, WallMsg, WallState};
 use library::{load_library, Library, RangeOp, IMAGE_EXTENSIONS};
@@ -99,6 +99,9 @@ struct App {
     /// The window starts hidden (`visible: false`) and is revealed on its first
     /// rendered frame to avoid a white startup flash; this latches that reveal.
     revealed: bool,
+    /// A yes/no question waiting on the user. Modal: while it is up, `update`
+    /// swallows everything but the keys that answer it.
+    confirm: Option<Confirm>,
     /// Live modifier state, tracked from the keyboard subscription.
     ///
     /// A `button` reports only *that* it was pressed, so a click carrying
@@ -106,6 +109,17 @@ struct App {
     /// the only source: if the window loses focus mid-chord this can go stale
     /// until the next key event, which costs at most one mis-read click.
     modifiers: keyboard::Modifiers,
+}
+
+/// A pending confirmation: what to ask, and what to do if the answer is yes.
+struct Confirm {
+    prompt: String,
+    action: ConfirmAction,
+}
+
+enum ConfirmAction {
+    /// Move every selected image to the system trash.
+    DeleteSelected(Vec<PathBuf>),
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +157,15 @@ enum Message {
     SelectAll,
     /// `i`.
     InvertSelection,
+    /// `d`: ask before trashing the selection.
+    DeleteSelected,
+    /// The trash operation finished; carries what actually left the disk.
+    Deleted {
+        gone: Vec<PathBuf>,
+        failed: Vec<(PathBuf, String)>,
+    },
+    ConfirmYes,
+    ConfirmNo,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it
     /// is only a trigger — `gui::wall::measure` reads the real number back.
@@ -163,6 +186,28 @@ enum Message {
     Wall(WallMsg),
 }
 
+/// Move each path to the system trash, one at a time so a single stubborn file
+/// doesn't take the rest of the batch down with it. Returns what actually left
+/// the disk and what didn't.
+///
+/// The trash, not `unlink`: there is no undo in this app, and a mistaken
+/// selection of a hundred photos should be a nuisance rather than a
+/// catastrophe.
+fn trash_all(paths: Vec<PathBuf>) -> (Vec<PathBuf>, Vec<(PathBuf, String)>) {
+    let mut gone = Vec::new();
+    let mut failed = Vec::new();
+    for path in paths {
+        match trash::delete(&path) {
+            Ok(()) => gone.push(path),
+            // Already missing: the file is gone either way, which is all the
+            // library cares about.
+            Err(_) if !path.exists() => gone.push(path),
+            Err(e) => failed.push((path, e.to_string())),
+        }
+    }
+    (gone, failed)
+}
+
 impl App {
     fn new() -> (App, Task<Message>) {
         let mut app = App {
@@ -171,6 +216,7 @@ impl App {
             help_open: false,
             fullscreen: false,
             revealed: false,
+            confirm: None,
             modifiers: keyboard::Modifiers::default(),
         };
         let task = match std::env::args().nth(1) {
@@ -242,6 +288,23 @@ impl App {
         }
     }
 
+    /// Carry out whatever was being confirmed.
+    fn confirm_yes(&mut self) -> Task<Message> {
+        let Some(confirm) = self.confirm.take() else {
+            return Task::none();
+        };
+        match confirm.action {
+            ConfirmAction::DeleteSelected(paths) => Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || trash_all(paths))
+                        .await
+                        .unwrap_or_else(|e| (Vec::new(), vec![(PathBuf::new(), e.to_string())]))
+                },
+                |(gone, failed)| Message::Deleted { gone, failed },
+            ),
+        }
+    }
+
     /// Hand a message to the wall, or drop it if the wall isn't on screen.
     /// Selection lives on the wall alone: the single view has no selection to
     /// show, so acting on one from there could only ever surprise.
@@ -269,16 +332,38 @@ impl App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        // A confirmation is modal: nothing else reaches the app until it is
+        // answered, so a stray keypress can't act on a library the user is
+        // still deciding about.
+        if self.confirm.is_some()
+            && !matches!(
+                message,
+                Message::ConfirmYes
+                    | Message::ConfirmNo
+                    | Message::Activate
+                    | Message::Escape
+                    | Message::Quit
+                    | Message::Deleted { .. }
+                    | Message::ModifiersChanged(_)
+                    | Message::WindowReady
+            )
+        {
+            return Task::none();
+        }
+
         match message {
             Message::Quit => iced::exit(),
             Message::ToggleHelp => {
                 self.help_open = !self.help_open;
                 Task::none()
             }
-            // Esc is a ladder: the help overlay first, then the wall's own
-            // rungs (cancel a painted range, then clear the selection). One
-            // press is always one rung.
+            // Esc is a ladder: a pending confirmation first, then the help
+            // overlay, then the wall's own rungs (cancel a running batch, then
+            // a painted range, then the selection). One press is one rung.
             Message::Escape => {
+                if self.confirm.take().is_some() {
+                    return Task::none();
+                }
                 if self.help_open {
                     self.help_open = false;
                     return Task::none();
@@ -335,7 +420,8 @@ impl App {
             },
             // In the wall, Enter commits a painted range if one is in progress
             // and otherwise opens whatever the ring is around; it means nothing
-            // on the other screens.
+            // on the other screens. With a question up it answers yes.
+            Message::Activate if self.confirm.is_some() => self.confirm_yes(),
             Message::Activate => match &mut self.screen {
                 Screen::Wall(w) if w.is_visual() => w.update(WallMsg::CommitVisual),
                 Screen::Wall(w) => {
@@ -349,6 +435,49 @@ impl App {
             Message::ToggleSelected => self.wall_msg(WallMsg::ToggleCursor),
             Message::SelectAll => self.wall_msg(WallMsg::SelectAll),
             Message::InvertSelection => self.wall_msg(WallMsg::InvertSelection),
+
+            Message::DeleteSelected => {
+                let Screen::Wall(w) = &self.screen else {
+                    return Task::none();
+                };
+                let Some(selected) = w.operable_selection() else {
+                    return Task::none();
+                };
+                let prompt = match selected.len() {
+                    1 => "Move 1 photo to the trash?".to_string(),
+                    n => format!("Move {n} photos to the trash?"),
+                };
+                self.confirm = Some(Confirm {
+                    prompt,
+                    action: ConfirmAction::DeleteSelected(selected),
+                });
+                Task::none()
+            }
+            Message::ConfirmYes => self.confirm_yes(),
+            Message::ConfirmNo => {
+                self.confirm = None;
+                Task::none()
+            }
+            Message::Deleted { gone, failed } => {
+                for (path, error) in &failed {
+                    eprintln!("Could not trash {}: {error}", path.display());
+                }
+                let gone: std::collections::HashSet<PathBuf> = gone.into_iter().collect();
+                if gone.is_empty() {
+                    return Task::none();
+                }
+                match &mut self.screen {
+                    Screen::Wall(w) => match w.removed(&gone) {
+                        (true, task) => task,
+                        // Everything is gone: there is no library left to show.
+                        (false, _) => {
+                            self.screen = Screen::Empty;
+                            Task::none()
+                        }
+                    },
+                    _ => Task::none(),
+                }
+            }
             Message::WallMeasure => match &self.screen {
                 Screen::Wall(_) => gui::wall::measure(),
                 _ => Task::none(),
@@ -441,6 +570,9 @@ impl App {
                 keyboard::Key::Character("v") => Some(Message::Visual { op: RangeOp::Add }),
                 keyboard::Key::Character("x") => Some(Message::Visual { op: RangeOp::Remove }),
                 keyboard::Key::Character("i") => Some(Message::InvertSelection),
+                keyboard::Key::Character("d") => Some(Message::DeleteSelected),
+                keyboard::Key::Character("y") => Some(Message::ConfirmYes),
+                keyboard::Key::Character("n") => Some(Message::ConfirmNo),
                 keyboard::Key::Character("a") if modifiers.command() => Some(Message::SelectAll),
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
@@ -486,10 +618,19 @@ impl App {
             Screen::Wall(w) => w.view(),
         };
 
+        let mut layers: Vec<Element<'_, Message>> = vec![content];
         if self.help_open {
-            Stack::with_children(vec![content, help_overlay()]).into()
+            layers.push(help_overlay());
+        }
+        if let Some(confirm) = &self.confirm {
+            layers.push(confirm_overlay(&confirm.prompt));
+        }
+
+        if layers.len() == 1 {
+            layers.pop().unwrap()
         } else {
-            content
+            Stack::with_children(layers).into()
         }
     }
 }
+

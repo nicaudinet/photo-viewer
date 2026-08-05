@@ -30,6 +30,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Space", "Wall: select / deselect one"),
     ("\u{2318}A", "Wall: select all"),
     ("i", "Wall: invert selection"),
+    ("d", "Wall: trash the selection"),
     ("e", "Fullscreen (toggle)"),
     ("?", "Show help (toggle)"),
     ("Esc", "Help, then range, then selection"),
@@ -88,6 +89,24 @@ pub(crate) fn help_overlay() -> Element<'static, Message> {
         container(column![title, rows].spacing(18))
             .padding(28)
             .style(overlay_box),
+    )
+    .into()
+}
+
+/// A modal yes/no question. Everything else is swallowed while it is up (see
+/// `App::update`), so the only ways out are the two keys it names.
+pub(crate) fn confirm_overlay(prompt: &str) -> Element<'_, Message> {
+    center(
+        container(
+            column![
+                text(prompt).size(22),
+                text("y / \u{21b5} \u{2014} yes      n / Esc \u{2014} no").size(14),
+            ]
+            .spacing(18)
+            .align_x(Horizontal::Center),
+        )
+        .padding(28)
+        .style(overlay_box),
     )
     .into()
 }

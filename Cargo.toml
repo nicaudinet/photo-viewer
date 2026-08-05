@@ -24,6 +24,7 @@ jpeg-decoder = "0.3"
 tokio = { version = "1", features = ["rt", "time"] }
 # Native directory picker (save-favourites destination).
 rfd = "0.15"
+trash = "5.2.6"
 
 # macOS "Open With" / double-click: Finder delivers the opened file as an Apple
 # Event, not on argv. We register an NSAppleEventManager handler for it.

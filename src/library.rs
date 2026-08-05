@@ -55,9 +55,8 @@ impl From<std::io::Error> for LibraryError {
 #[derive(Debug, Clone)]
 pub struct Library {
     pub paths: PointedList<PathBuf>,
-    /// The directory `paths` was scanned from. Unread since the cache files
-    /// went away; the move/copy destination picker (phase 5) wants it back.
-    #[allow(dead_code)]
+    /// The directory `paths` was scanned from. The move/copy picker opens here,
+    /// and it is what tells a destination inside the library from one outside.
     pub image_dir: PathBuf,
     /// The images the user has selected, as paths rather than indices:
     /// deleting or moving files renumbers `paths`, and an index-keyed selection

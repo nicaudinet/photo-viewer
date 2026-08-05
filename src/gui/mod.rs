@@ -30,6 +30,8 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Space", "Wall: select / deselect one"),
     ("\u{2318}A", "Wall: select all"),
     ("i", "Wall: invert selection"),
+    ("m", "Wall: move the selection"),
+    ("c", "Wall: copy the selection"),
     ("d", "Wall: trash the selection"),
     ("e", "Fullscreen (toggle)"),
     ("?", "Show help (toggle)"),
@@ -93,17 +95,27 @@ pub(crate) fn help_overlay() -> Element<'static, Message> {
     .into()
 }
 
-/// A modal yes/no question. Everything else is swallowed while it is up (see
-/// `App::update`), so the only ways out are the two keys it names.
-pub(crate) fn confirm_overlay(prompt: &str) -> Element<'_, Message> {
+/// A modal question. Everything else is swallowed while it is up (see
+/// `App::update` and `App::subscription`), so the only ways out are the keys
+/// `hint` names — which is why every answer has to appear there.
+///
+/// `detail` is for what the user needs in order to answer: how many files
+/// already exist at the destination, or that moved images will leave the wall.
+pub(crate) fn confirm_overlay(
+    prompt: &str,
+    detail: Option<&str>,
+    hint: &str,
+) -> Element<'static, Message> {
+    let mut body = column![text(prompt.to_string()).size(22)].spacing(12);
+    if let Some(detail) = detail {
+        body = body.push(text(detail.to_string()).size(15).style(text::secondary));
+    }
+
     center(
         container(
-            column![
-                text(prompt).size(22),
-                text("y / \u{21b5} \u{2014} yes      n / Esc \u{2014} no").size(14),
-            ]
-            .spacing(18)
-            .align_x(Horizontal::Center),
+            column![body, text(hint.to_string()).size(14)]
+                .spacing(18)
+                .align_x(Horizontal::Center),
         )
         .padding(28)
         .style(overlay_box),

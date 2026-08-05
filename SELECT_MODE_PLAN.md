@@ -326,16 +326,38 @@ operations still touch only the current image.
 `m` moves, `c` copies, both through the `rfd` folder picker, both through the
 `Batch` runner, both behind a confirm showing the count and the destination.
 
-- **Collisions**: an overlay offering *Skip / Rename (`name-1.jpg`) / Overwrite*
-  with an "apply to all" toggle. The old `save_favourites` merely `eprintln!`ed
-  a skip, which is not acceptable for an interactive operation.
+- **Collisions**: the destination is inspected *before* the question is asked,
+  and the answer to that one question is the policy for the whole batch —
+  *skip those / keep both (`name-1.jpg`) / overwrite*. The old `save_favourites`
+  merely `eprintln!`ed a skip, which is not acceptable for an interactive
+  operation.
+
+  ~~An overlay per collision, with an "apply to all" toggle.~~ Dropped. A batch
+  runs several files at once, so a mid-batch question would have to stall
+  dispatch while the files already handed to the runtime carried on landing
+  behind the overlay — and a hundred clashes would mean a hundred questions
+  before "apply to all" was reached. Counting up front costs one `stat` per
+  file, off the GUI thread, and lets the question state the real number. A file
+  can still appear between the count and the write, which is why the *policy*
+  rather than the count is what each write applies.
+
+  The three-way answer is why `Confirm` grew from yes/no into a list of keyed
+  choices, and why a question on screen now swaps the whole keymap
+  (`App::subscription`): its answers can be any letter, and the ordinary
+  bindings would fight them.
 - **Cross-filesystem**: `fs::rename` fails with `EXDEV`; fall back to copy plus
   remove.
 - **Destination inside `image_dir`**: the scan is non-recursive, so moved files
   vanish from the wall. Correct, but surprising — say so in the confirm.
-- **Partial failure**: keep the survivors selected.
+  Picking `image_dir` *itself* is refused: nothing would move, and every file
+  would clash with itself.
+- **Partial failure**: keep the survivors selected. This falls out rather than
+  being arranged — only the files that actually left are pruned, so failed and
+  skipped ones stay selected and a second attempt hits exactly those.
 - Move prunes the moved paths from `paths` and `selection`; copy changes
-  nothing but the disk.
+  nothing but the disk. The pruning happens once, at the end, for the same
+  reason the batch never calls `reveal()` per file: re-laying the masonry
+  per image would shuffle the wall while the user is watching it.
 
 ## Phase 6 — Favourites, reborn
 

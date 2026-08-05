@@ -36,6 +36,7 @@ use iced::{
 
 use super::ICON_MARGIN;
 use crate::library::{Library, RangeOp};
+use crate::transfer::{self, Collision, TransferKind, Transferred};
 use crate::Message;
 
 /// Thumbnail column width and inter-item spacing (matches the Python wall).
@@ -149,11 +150,32 @@ pub(crate) enum WallMsg {
     /// Esc: one rung down the ladder (cancel a running batch, then the painted
     /// range, then the selection).
     Escape,
+    /// Run an operation over `paths`, which the caller has already confirmed.
+    ///
+    /// The files come with the message rather than being re-read from the
+    /// selection: the question the user answered named a count, and that count
+    /// has to be what actually happens.
+    StartBatch {
+        kind: BatchKind,
+        paths: Vec<PathBuf>,
+    },
     /// One file of a batch finished.
     BatchProgress {
         path: PathBuf,
-        result: Result<(), String>,
+        result: Result<FileDone, String>,
     },
+}
+
+/// What one finished file means for the wall — the only part of an operation's
+/// result the view has to care about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileDone {
+    /// It changed shape on disk, so its thumbnail and height are stale.
+    Reshaped,
+    /// It is no longer in the library's folder.
+    Gone,
+    /// Nothing the wall shows has changed.
+    Unchanged,
 }
 
 /// A decoded thumbnail: the RGBA handle plus its scaled pixel size (needed for
@@ -245,20 +267,33 @@ struct Batch {
     /// message per failure, which for a whole failed batch would be a wall of
     /// identical lines.
     failed: Vec<(PathBuf, String)>,
+    /// Files that have left the library's folder. Collected rather than removed
+    /// one by one: re-laying the masonry per file would shuffle the wall under
+    /// whoever is watching it.
+    gone: Vec<PathBuf>,
     /// Set by Esc: nothing further is dispatched, but work already handed to
     /// the runtime is left to land rather than abandoned mid-write.
     cancelled: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum BatchKind {
-    Rotate { clockwise: bool },
+/// The operations a selection can be put through.
+#[derive(Debug, Clone)]
+pub(crate) enum BatchKind {
+    Rotate {
+        clockwise: bool,
+    },
+    Transfer {
+        kind: TransferKind,
+        dest: PathBuf,
+        collision: Collision,
+    },
 }
 
 impl BatchKind {
-    fn verb(self) -> &'static str {
+    fn verb(&self) -> &'static str {
         match self {
             BatchKind::Rotate { .. } => "Rotating",
+            BatchKind::Transfer { kind, .. } => kind.verb(),
         }
     }
 }
@@ -494,6 +529,7 @@ impl WallState {
                 self.settle()
             }
             WallMsg::Escape => self.escape(),
+            WallMsg::StartBatch { kind, paths } => self.start_batch(kind, paths),
             WallMsg::BatchProgress { path, result } => self.batch_progress(path, result),
         }
     }
@@ -587,24 +623,22 @@ impl WallState {
         if self.is_visual() || self.batch.is_some() {
             return Task::none();
         }
-        if self.mode == WallMode::Select {
-            return self.start_batch(BatchKind::Rotate { clockwise });
+        if let Some(selected) = self.operable_selection() {
+            return self.start_batch(BatchKind::Rotate { clockwise }, selected);
         }
         self.rotate_one(clockwise)
     }
 
-    /// Begin an operation over every selected image, in library order.
-    fn start_batch(&mut self, kind: BatchKind) -> Task<Message> {
-        let pending: VecDeque<PathBuf> = self
-            .library
-            .paths
-            .iter()
-            .filter(|p| self.library.is_selected(p))
-            .cloned()
-            .collect();
-        if pending.is_empty() {
+    /// Begin an operation over `paths`.
+    ///
+    /// Refused while a range is being painted or another batch is running, for
+    /// the same reasons [`WallState::rotate`] is: an uncommitted range has no
+    /// settled meaning, and two batches would fight over the same files.
+    fn start_batch(&mut self, kind: BatchKind, paths: Vec<PathBuf>) -> Task<Message> {
+        if self.is_visual() || self.batch.is_some() || paths.is_empty() {
             return Task::none();
         }
+        let pending: VecDeque<PathBuf> = paths.into_iter().collect();
         self.batch = Some(Batch {
             kind,
             total: pending.len(),
@@ -612,6 +646,7 @@ impl WallState {
             in_flight: 0,
             done: 0,
             failed: Vec::new(),
+            gone: Vec::new(),
             cancelled: false,
         });
         Task::batch([self.refill(), self.remeasure()])
@@ -623,7 +658,7 @@ impl WallState {
         let Some(batch) = &mut self.batch else {
             return Task::none();
         };
-        let kind = batch.kind;
+        let kind = batch.kind.clone();
         let free = max_in_flight().saturating_sub(batch.in_flight);
         let mut chosen = Vec::new();
         if !batch.cancelled {
@@ -638,19 +673,19 @@ impl WallState {
 
         let tasks: Vec<Task<Message>> = chosen
             .into_iter()
-            .map(|path| match kind {
-                BatchKind::Rotate { clockwise } => {
+            .map(|path| {
+                let key = path.clone();
+                if matches!(kind, BatchKind::Rotate { .. }) {
                     // The same per-file claim a single rotate takes, so a batch
                     // and a stray keypress can't write one file twice at once.
                     self.rotating.insert(path.clone());
-                    let key = path.clone();
-                    Task::perform(rotate_async(path, clockwise), move |result| {
-                        Message::Wall(WallMsg::BatchProgress {
-                            path: key.clone(),
-                            result,
-                        })
-                    })
                 }
+                Task::perform(run_one(path, kind.clone()), move |result| {
+                    Message::Wall(WallMsg::BatchProgress {
+                        path: key.clone(),
+                        result,
+                    })
+                })
             })
             .collect();
         Task::batch(tasks)
@@ -658,22 +693,32 @@ impl WallState {
 
     /// One file of a batch has landed: fold it in, refill the slot it freed,
     /// and finish up if it was the last.
-    fn batch_progress(&mut self, path: PathBuf, result: Result<(), String>) -> Task<Message> {
+    fn batch_progress(&mut self, path: PathBuf, result: Result<FileDone, String>) -> Task<Message> {
         self.rotating.remove(&path);
         let Some(batch) = &mut self.batch else {
             return Task::none();
         };
         batch.in_flight = batch.in_flight.saturating_sub(1);
         batch.done += 1;
+
+        let mut reshaped = false;
         match result {
-            Ok(()) => {}
+            Ok(FileDone::Reshaped) => reshaped = true,
+            // Held back rather than removed now: dropping images from the
+            // library re-lays the masonry, and doing that per file would
+            // shuffle the wall while the user is watching it.
+            Ok(FileDone::Gone) => batch.gone.push(path.clone()),
+            Ok(FileDone::Unchanged) => {}
             Err(e) => batch.failed.push((path.clone(), e)),
         }
 
-        // Deliberately no `reveal` and no `refocus` here: those move the view,
-        // and a batch of hundreds would scroll the wall out from under whoever
-        // is watching it. They run once, at the end.
-        let invalidate = self.invalidate_rotated(path);
+        // Deliberately no `reveal` and no `refocus` here either: those move the
+        // view. They run once, at the end.
+        let invalidate = if reshaped {
+            self.invalidate_rotated(path)
+        } else {
+            Task::none()
+        };
         let finished = self
             .batch
             .as_ref()
@@ -690,11 +735,21 @@ impl WallState {
                     batch.failed[0].1
                 );
             }
-            // Every tile in the batch changed shape, so a sticky centre from
-            // before it means nothing now.
+            // Every tile the batch touched changed shape or left, so a sticky
+            // centre from before it means nothing now.
             self.desired_y = None;
             self.refocus();
-            return Task::batch([invalidate, self.remeasure(), self.schedule()]);
+            // The files that left go back through `App`, which is the only
+            // place that can fall back to the empty screen if none are left.
+            let gone = if batch.gone.is_empty() {
+                Task::none()
+            } else {
+                Task::done(Message::Removed {
+                    gone: batch.gone,
+                    failed: Vec::new(),
+                })
+            };
+            return Task::batch([invalidate, gone, self.remeasure(), self.schedule()]);
         }
         Task::batch([invalidate, self.refill(), self.schedule()])
     }
@@ -1033,7 +1088,7 @@ impl WallState {
             }
             WallMode::Select => (
                 format!("SELECT {}", self.library.selection.len()),
-                "r rotate \u{b7} d delete \u{b7} v add \u{b7} x remove \u{b7} Space toggle \u{b7} Esc clear",
+                "r rotate \u{b7} m move \u{b7} c copy \u{b7} d trash \u{b7} v add \u{b7} x remove \u{b7} Esc clear",
             ),
         };
         Some(self.bar(label, hint))
@@ -1278,6 +1333,31 @@ async fn rotate_async(path: PathBuf, clockwise: bool) -> Result<(), String> {
     tokio::task::spawn_blocking(move || crate::imaging::rotate_in_place(&path, clockwise))
         .await
         .unwrap_or_else(|e| Err(e.to_string()))
+}
+
+/// Apply one file's worth of a batch, off the GUI thread.
+async fn run_one(path: PathBuf, kind: BatchKind) -> Result<FileDone, String> {
+    match kind {
+        BatchKind::Rotate { clockwise } => rotate_async(path, clockwise)
+            .await
+            .map(|()| FileDone::Reshaped),
+        BatchKind::Transfer {
+            kind,
+            dest,
+            collision,
+        } => tokio::task::spawn_blocking(move || transfer::transfer(&path, &dest, kind, collision))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()))
+            .map(|done| match done {
+                // A move that went through: the image is not in this folder any
+                // more, so the wall has to stop showing it.
+                Transferred::SourceGone => FileDone::Gone,
+                // A copy, or a move skipped over a name clash. Either way the
+                // wall is unchanged — and a skipped file stays selected, so a
+                // second attempt with a different answer hits exactly those.
+                Transferred::SourceKept => FileDone::Unchanged,
+            }),
+    }
 }
 
 /// Read the wall scrollable's viewport size back out of the laid-out widget
@@ -1817,7 +1897,16 @@ mod tests {
 
     /// Land one file of the running batch.
     fn land(state: &mut WallState, path: PathBuf, result: Result<(), String>) {
+        let result = result.map(|()| FileDone::Reshaped);
         let _ = state.update(WallMsg::BatchProgress { path, result });
+    }
+
+    /// Land one file of a transfer batch, saying what became of the source.
+    fn landed(state: &mut WallState, path: PathBuf, done: FileDone) {
+        let _ = state.update(WallMsg::BatchProgress {
+            path,
+            result: Ok(done),
+        });
     }
 
     fn batch_paths(state: &WallState) -> Vec<PathBuf> {
@@ -1984,6 +2073,150 @@ mod tests {
         // answer to "which images?".
         assert!(state.batch.is_none());
         assert!(state.rotating.is_empty());
+    }
+
+    // --- Transfers ---
+
+    fn move_kind() -> BatchKind {
+        BatchKind::Transfer {
+            kind: TransferKind::Move,
+            dest: PathBuf::from("/elsewhere"),
+            collision: Collision::Skip,
+        }
+    }
+
+    fn start(state: &mut WallState, kind: BatchKind, paths: Vec<PathBuf>) {
+        let _ = state.update(WallMsg::StartBatch { kind, paths });
+    }
+
+    #[test]
+    fn a_transfer_runs_over_the_paths_it_was_handed() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let _ = state.update(WallMsg::SelectAll);
+
+        // The question the user answered named a count, so that count is what
+        // runs — not whatever the selection happens to hold by now.
+        start(&mut state, move_kind(), paths[..2].to_vec());
+        assert_eq!(state.batch.as_ref().unwrap().total, 2);
+    }
+
+    #[test]
+    fn a_transfer_is_bounded_like_every_other_batch() {
+        let mut state = wall(&[200.0; 40], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        start(&mut state, move_kind(), paths);
+
+        let batch = state.batch.as_ref().expect("batch started");
+        assert_eq!(batch.in_flight, max_in_flight().min(40));
+    }
+
+    #[test]
+    fn a_transfer_does_not_claim_files_for_rotation() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        start(&mut state, move_kind(), paths);
+        // The rotate claim exists to stop two writes racing one file; a move
+        // does not rewrite anything, and claiming would just leak the key.
+        assert!(state.rotating.is_empty());
+    }
+
+    #[test]
+    fn moved_files_are_held_back_until_the_batch_ends() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        start(&mut state, move_kind(), paths[..2].to_vec());
+
+        landed(&mut state, paths[0].clone(), FileDone::Gone);
+        // Re-laying the masonry per file would shuffle the wall under whoever
+        // is watching it, so the library is untouched until the end.
+        assert_eq!(state.library.paths.len(), 6);
+        assert_eq!(state.batch.as_ref().unwrap().gone, vec![paths[0].clone()]);
+
+        landed(&mut state, paths[1].clone(), FileDone::Gone);
+        assert!(state.batch.is_none());
+    }
+
+    #[test]
+    fn a_copy_leaves_the_thumbnails_alone() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        state.thumbs.insert(paths[0].clone(), fake_thumb(200));
+        start(
+            &mut state,
+            BatchKind::Transfer {
+                kind: TransferKind::Copy,
+                dest: PathBuf::from("/elsewhere"),
+                collision: Collision::Skip,
+            },
+            vec![paths[0].clone()],
+        );
+
+        landed(&mut state, paths[0].clone(), FileDone::Unchanged);
+        // Nothing about the original changed, so re-decoding it would be pure
+        // waste — and on a big copy, a wall's worth of it.
+        assert!(state.thumbs.contains_key(&paths[0]));
+        assert_eq!(state.ratios.get(&paths[0]), Some(&200.0));
+    }
+
+    #[test]
+    fn a_skipped_move_stays_on_the_wall() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let _ = state.update(WallMsg::SelectAll);
+        start(&mut state, move_kind(), vec![paths[0].clone()]);
+
+        landed(&mut state, paths[0].clone(), FileDone::Unchanged);
+        assert!(state.batch.is_none());
+        assert_eq!(state.library.paths.len(), 6);
+        // Still selected, so answering the question differently retries exactly
+        // the files that were skipped.
+        assert_eq!(selected(&state).len(), 6);
+    }
+
+    #[test]
+    fn a_transfer_cannot_start_on_top_of_another_batch() {
+        let mut state = wall(&[200.0; 40], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let _ = state.update(WallMsg::SelectAll);
+        rotate(&mut state);
+
+        start(&mut state, move_kind(), paths);
+        // Two batches over the same files would fight over them.
+        assert!(matches!(
+            state.batch.as_ref().unwrap().kind,
+            BatchKind::Rotate { .. }
+        ));
+    }
+
+    #[test]
+    fn a_transfer_is_ignored_while_painting() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let _ = state.update(WallMsg::SelectAll);
+        enter_visual(&mut state, RangeOp::Add);
+
+        start(&mut state, move_kind(), paths);
+        assert!(state.batch.is_none());
+    }
+
+    #[test]
+    fn escape_cancels_a_transfer_too() {
+        let mut state = wall(&[200.0; 40], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        start(&mut state, move_kind(), paths.clone());
+
+        let _ = state.update(WallMsg::Escape);
+        let batch = state.batch.as_ref().expect("still finishing");
+        assert!(batch.pending.is_empty());
+        // Files already handed to the runtime still land: half a move is a lost
+        // photo.
+        let in_flight = batch.in_flight;
+        assert!(in_flight > 0);
+        for path in paths.iter().take(in_flight) {
+            landed(&mut state, path.clone(), FileDone::Gone);
+        }
+        assert!(state.batch.is_none());
     }
 
     #[test]

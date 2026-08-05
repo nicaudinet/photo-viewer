@@ -7,7 +7,8 @@
 //!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
 //!   (scrolling it into view), Enter or a click to open it, `r`/`Shift+R` to
 //!   rotate it on disk, and a modal selection (`v`/`x`/`Space`, or the mouse)
-//!   over groups of images.
+//!   over groups of images, which can then be rotated, sent to another folder
+//!   (`m`/`c`) or trashed (`d`) all at once.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
@@ -28,6 +29,7 @@ mod platform;
 // selection phases will consume; allow the still-unused surface for now.
 #[allow(dead_code)]
 mod pointed_list;
+mod transfer;
 
 mod gui;
 
@@ -41,10 +43,11 @@ use iced::window::Mode;
 use iced::{Element, Size, Subscription, Task, Theme};
 
 use gui::empty::empty_view;
-use gui::{confirm_overlay, help_overlay};
 use gui::single::{SingleMsg, SingleState};
-use gui::wall::{Click, Dir, WallMsg, WallState};
+use gui::wall::{BatchKind, Click, Dir, WallMsg, WallState};
+use gui::{confirm_overlay, help_overlay};
 use library::{load_library, Library, RangeOp, IMAGE_EXTENSIONS};
+use transfer::{Collision, TransferKind};
 
 pub fn main() -> iced::Result {
     // Register the macOS open-file handler before the event loop starts, so a
@@ -99,8 +102,9 @@ struct App {
     /// The window starts hidden (`visible: false`) and is revealed on its first
     /// rendered frame to avoid a white startup flash; this latches that reveal.
     revealed: bool,
-    /// A yes/no question waiting on the user. Modal: while it is up, `update`
-    /// swallows everything but the keys that answer it.
+    /// A question waiting on the user. Modal: while it is up the keyboard is
+    /// swapped for one that speaks only its answers (see `App::subscription`),
+    /// and `update` swallows whatever else still arrives.
     confirm: Option<Confirm>,
     /// Live modifier state, tracked from the keyboard subscription.
     ///
@@ -111,15 +115,70 @@ struct App {
     modifiers: keyboard::Modifiers,
 }
 
-/// A pending confirmation: what to ask, and what to do if the answer is yes.
+/// A question waiting on the user, and what each answer does.
 struct Confirm {
     prompt: String,
+    /// Anything that has to be known before answering — a name clash, or the
+    /// fact that moved files will drop off the wall.
+    detail: Option<String>,
+    /// The answers on offer, in order. Enter picks the first, so that one must
+    /// always be the safe reading of the question. `n` and Esc always cancel,
+    /// so no answer may claim either key; nor `q`, which still quits.
+    choices: Vec<Choice>,
+}
+
+struct Choice {
+    key: char,
+    label: &'static str,
     action: ConfirmAction,
+}
+
+impl Confirm {
+    /// The keys line under the question. Every way out is named: an answer the
+    /// overlay does not mention is an answer nobody can give.
+    fn hint(&self) -> String {
+        let mut parts: Vec<String> = self
+            .choices
+            .iter()
+            .enumerate()
+            .map(|(i, c)| match i {
+                0 => format!("{} / \u{21b5} \u{2014} {}", c.key, c.label),
+                _ => format!("{} \u{2014} {}", c.key, c.label),
+            })
+            .collect();
+        parts.push("n / Esc \u{2014} cancel".to_string());
+        parts.join("      ")
+    }
 }
 
 enum ConfirmAction {
     /// Move every selected image to the system trash.
     DeleteSelected(Vec<PathBuf>),
+    /// Move or copy the selection into the folder the user picked.
+    Transfer {
+        plan: TransferPlan,
+        collision: Collision,
+    },
+}
+
+/// A move or copy that has been aimed at a folder but not yet agreed to.
+///
+/// Everything the question needs is gathered before it is asked — including a
+/// look at the destination — so the user is told the real number of name
+/// clashes once, up front, rather than being interrupted per file.
+#[derive(Debug, Clone)]
+struct TransferPlan {
+    kind: TransferKind,
+    dest: PathBuf,
+    paths: Vec<PathBuf>,
+    /// How many of `paths` already have a namesake in `dest`.
+    collisions: usize,
+    /// The destination is the folder the images are already in.
+    same_dir: bool,
+    /// The destination sits inside the library's folder. The scan is not
+    /// recursive, so moved images vanish from the wall — correct, but worth
+    /// saying before it happens rather than after.
+    inside_library: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -142,7 +201,9 @@ enum Message {
     Nav(Dir),
     /// `r` / `Shift+R`: rotate the current image (single) or the selected
     /// thumbnail (wall). Both write the file to disk.
-    Rotate { clockwise: bool },
+    Rotate {
+        clockwise: bool,
+    },
     /// Enter: commit a painted range, else open the selected thumbnail (wall
     /// only).
     Activate,
@@ -150,7 +211,9 @@ enum Message {
     // Selection keys. Meaningful only on the wall, but the subscription can't
     // see which screen is live, so they are dispatched in `App::update`.
     /// `v` / `x`: paint a range that adds to / removes from the selection.
-    Visual { op: RangeOp },
+    Visual {
+        op: RangeOp,
+    },
     /// `Space`: select or deselect the image under the cursor.
     ToggleSelected,
     /// `Cmd+A`.
@@ -159,12 +222,23 @@ enum Message {
     InvertSelection,
     /// `d`: ask before trashing the selection.
     DeleteSelected,
-    /// The trash operation finished; carries what actually left the disk.
-    Deleted {
+    /// `m` / `c`: send the selection to another folder. Opens the folder picker
+    /// first; nothing is written until the question that follows is answered.
+    Transfer {
+        kind: TransferKind,
+    },
+    /// The folder picker closed, and the destination has been looked at.
+    /// `None` if the picker was cancelled.
+    TransferTarget(Option<TransferPlan>),
+    /// Images have left the library's folder — trashed, or moved elsewhere.
+    /// Carries what actually went, so a failure leaves its image on the wall.
+    Removed {
         gone: Vec<PathBuf>,
         failed: Vec<(PathBuf, String)>,
     },
-    ConfirmYes,
+    /// A key naming one of the answers on offer.
+    ConfirmChoice(char),
+    /// `n` — decline, whatever was asked.
     ConfirmNo,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it
@@ -206,6 +280,55 @@ fn trash_all(paths: Vec<PathBuf>) -> (Vec<PathBuf>, Vec<(PathBuf, String)>) {
         }
     }
     (gone, failed)
+}
+
+/// Ask for a destination folder, then look at what is already in it.
+///
+/// The whole question is assembled before it is put to the user: how many files
+/// would land on a namesake, and whether the folder is one the wall is showing.
+/// Asking once, up front, beats interrupting a running batch per clash.
+async fn pick_destination(
+    kind: TransferKind,
+    paths: Vec<PathBuf>,
+    image_dir: PathBuf,
+) -> Option<TransferPlan> {
+    let title = match kind {
+        TransferKind::Move => "Move photos to\u{2026}",
+        TransferKind::Copy => "Copy photos to\u{2026}",
+    };
+    let dest = rfd::AsyncFileDialog::new()
+        .set_title(title)
+        .set_directory(&image_dir)
+        .pick_folder()
+        .await?
+        .path()
+        .to_path_buf();
+
+    // One `stat` per file: off the GUI thread, since a big selection over a
+    // network share is not instant.
+    tokio::task::spawn_blocking(move || {
+        let collisions = transfer::collisions(&paths, &dest);
+        let same_dir = dest == image_dir;
+        TransferPlan {
+            kind,
+            collisions,
+            same_dir,
+            inside_library: !same_dir && dest.starts_with(&image_dir),
+            dest,
+            paths,
+        }
+    })
+    .await
+    .ok()
+}
+
+/// A folder's own name, for the question — the full path is usually far too
+/// long to read at a glance. Falls back to the path for a root directory.
+fn folder_name(dir: &Path) -> String {
+    match dir.file_name() {
+        Some(name) => name.to_string_lossy().into_owned(),
+        None => dir.display().to_string(),
+    }
 }
 
 impl App {
@@ -288,21 +411,126 @@ impl App {
         }
     }
 
-    /// Carry out whatever was being confirmed.
-    fn confirm_yes(&mut self) -> Task<Message> {
-        let Some(confirm) = self.confirm.take() else {
+    /// Carry out the answer keyed `key`, or the first one on offer if `key` is
+    /// `None` (what Enter means). An unrecognised key leaves the question up.
+    fn answer(&mut self, key: Option<char>) -> Task<Message> {
+        let Some(confirm) = &self.confirm else {
             return Task::none();
         };
-        match confirm.action {
+        let found = match key {
+            Some(key) => confirm.choices.iter().position(|c| c.key == key),
+            // Enter takes the first answer, which is always the safe one.
+            None => (!confirm.choices.is_empty()).then_some(0),
+        };
+        let Some(index) = found else {
+            // A question with no answers on offer is a statement; Enter
+            // dismisses it, an unrecognised key leaves it up.
+            if key.is_none() {
+                self.confirm = None;
+            }
+            return Task::none();
+        };
+        let mut confirm = self.confirm.take().expect("checked just above");
+        self.act(confirm.choices.swap_remove(index).action)
+    }
+
+    fn act(&mut self, action: ConfirmAction) -> Task<Message> {
+        match action {
             ConfirmAction::DeleteSelected(paths) => Task::perform(
                 async move {
                     tokio::task::spawn_blocking(move || trash_all(paths))
                         .await
                         .unwrap_or_else(|e| (Vec::new(), vec![(PathBuf::new(), e.to_string())]))
                 },
-                |(gone, failed)| Message::Deleted { gone, failed },
+                |(gone, failed)| Message::Removed { gone, failed },
             ),
+            ConfirmAction::Transfer { plan, collision } => self.wall_msg(WallMsg::StartBatch {
+                kind: BatchKind::Transfer {
+                    kind: plan.kind,
+                    dest: plan.dest,
+                    collision,
+                },
+                paths: plan.paths,
+            }),
         }
+    }
+
+    /// Turn a destination the user picked into the question to ask about it.
+    fn ask_about(&mut self, plan: TransferPlan) {
+        let folder = folder_name(&plan.dest);
+        if plan.same_dir {
+            // Nothing to do, and every file would "clash" with itself — so this
+            // is a statement rather than a question.
+            self.confirm = Some(Confirm {
+                prompt: format!("Those photos are already in {folder}."),
+                detail: None,
+                choices: Vec::new(),
+            });
+            return;
+        }
+
+        let count = plan.paths.len();
+        let noun = if count == 1 { "photo" } else { "photos" };
+        let prompt = format!("{} {count} {noun} to {folder}?", plan.kind.word());
+
+        let mut detail = Vec::new();
+        if plan.collisions > 0 {
+            let (n, verb) = (
+                plan.collisions,
+                if plan.collisions == 1 { "is" } else { "are" },
+            );
+            detail.push(format!("{n} of them {verb} already there."));
+        }
+        if plan.inside_library && plan.kind == TransferKind::Move {
+            detail.push("They will leave the wall: the folder scan is not recursive.".to_string());
+        }
+
+        // With clashes there is no honest yes/no: the answer *is* the policy,
+        // chosen once and applied to every file, so nothing is written before
+        // the user has said what should happen to the ones already there.
+        let choices = if plan.collisions > 0 {
+            vec![
+                Choice {
+                    key: 's',
+                    label: "skip those",
+                    action: ConfirmAction::Transfer {
+                        plan: plan.clone(),
+                        collision: Collision::Skip,
+                    },
+                },
+                Choice {
+                    key: 'k',
+                    label: "keep both",
+                    action: ConfirmAction::Transfer {
+                        plan: plan.clone(),
+                        collision: Collision::KeepBoth,
+                    },
+                },
+                Choice {
+                    key: 'o',
+                    label: "overwrite",
+                    action: ConfirmAction::Transfer {
+                        plan,
+                        collision: Collision::Overwrite,
+                    },
+                },
+            ]
+        } else {
+            vec![Choice {
+                key: 'y',
+                label: "yes",
+                action: ConfirmAction::Transfer {
+                    plan,
+                    collision: Collision::Skip,
+                },
+            }]
+        };
+
+        self.confirm = Some(Confirm {
+            prompt,
+            detail: (!detail.is_empty()).then(|| detail.join("\n")),
+            choices,
+        });
     }
 
     /// Hand a message to the wall, or drop it if the wall isn't on screen.
@@ -338,12 +566,12 @@ impl App {
         if self.confirm.is_some()
             && !matches!(
                 message,
-                Message::ConfirmYes
-                    | Message::ConfirmNo
+                Message::ConfirmNo
+                    | Message::ConfirmChoice(_)
                     | Message::Activate
                     | Message::Escape
                     | Message::Quit
-                    | Message::Deleted { .. }
+                    | Message::Removed { .. }
                     | Message::ModifiersChanged(_)
                     | Message::WindowReady
             )
@@ -421,7 +649,7 @@ impl App {
             // In the wall, Enter commits a painted range if one is in progress
             // and otherwise opens whatever the ring is around; it means nothing
             // on the other screens. With a question up it answers yes.
-            Message::Activate if self.confirm.is_some() => self.confirm_yes(),
+            Message::Activate if self.confirm.is_some() => self.answer(None),
             Message::Activate => match &mut self.screen {
                 Screen::Wall(w) if w.is_visual() => w.update(WallMsg::CommitVisual),
                 Screen::Wall(w) => {
@@ -449,16 +677,40 @@ impl App {
                 };
                 self.confirm = Some(Confirm {
                     prompt,
-                    action: ConfirmAction::DeleteSelected(selected),
+                    detail: None,
+                    choices: vec![Choice {
+                        key: 'y',
+                        label: "yes",
+                        action: ConfirmAction::DeleteSelected(selected),
+                    }],
                 });
                 Task::none()
             }
-            Message::ConfirmYes => self.confirm_yes(),
+            Message::Transfer { kind } => {
+                let Screen::Wall(w) = &self.screen else {
+                    return Task::none();
+                };
+                let Some(selected) = w.operable_selection() else {
+                    return Task::none();
+                };
+                let image_dir = w.library.image_dir.clone();
+                Task::perform(
+                    pick_destination(kind, selected, image_dir),
+                    Message::TransferTarget,
+                )
+            }
+            // The picker was cancelled: nothing was asked, so nothing happens.
+            Message::TransferTarget(None) => Task::none(),
+            Message::TransferTarget(Some(plan)) => {
+                self.ask_about(plan);
+                Task::none()
+            }
+            Message::ConfirmChoice(key) => self.answer(Some(key)),
             Message::ConfirmNo => {
                 self.confirm = None;
                 Task::none()
             }
-            Message::Deleted { gone, failed } => {
+            Message::Removed { gone, failed } => {
                 for (path, error) in &failed {
                     eprintln!("Could not trash {}: {error}", path.display());
                 }
@@ -544,57 +796,25 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        // 0.14 unified keyboard subscriptions into a single `listen()` that
-        // emits raw `keyboard::Event`s; filter for key-presses ourselves.
-        let keys = keyboard::listen().filter_map(|event| {
-            // Clicks read their modifiers from `App::modifiers`, since a
-            // `button` press carries none of its own.
-            if let keyboard::Event::ModifiersChanged(modifiers) = event {
-                return Some(Message::ModifiersChanged(modifiers));
-            }
-            let keyboard::Event::KeyPressed { key, modified_key, modifiers, .. } = event else {
-                return None;
-            };
-            match key.as_ref() {
-                keyboard::Key::Named(Named::ArrowRight) => Some(Message::Nav(Dir::Right)),
-                keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Nav(Dir::Left)),
-                keyboard::Key::Named(Named::ArrowUp) => Some(Message::Nav(Dir::Up)),
-                keyboard::Key::Named(Named::ArrowDown) => Some(Message::Nav(Dir::Down)),
-                keyboard::Key::Named(Named::Enter) => Some(Message::Activate),
-                keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
-                keyboard::Key::Named(Named::Space) => Some(Message::ToggleSelected),
-                keyboard::Key::Character("l") => Some(Message::Nav(Dir::Right)),
-                keyboard::Key::Character("h") => Some(Message::Nav(Dir::Left)),
-                keyboard::Key::Character("k") => Some(Message::Nav(Dir::Up)),
-                keyboard::Key::Character("j") => Some(Message::Nav(Dir::Down)),
-                keyboard::Key::Character("v") => Some(Message::Visual { op: RangeOp::Add }),
-                keyboard::Key::Character("x") => Some(Message::Visual { op: RangeOp::Remove }),
-                keyboard::Key::Character("i") => Some(Message::InvertSelection),
-                keyboard::Key::Character("d") => Some(Message::DeleteSelected),
-                keyboard::Key::Character("y") => Some(Message::ConfirmYes),
-                keyboard::Key::Character("n") => Some(Message::ConfirmNo),
-                keyboard::Key::Character("a") if modifiers.command() => Some(Message::SelectAll),
-                keyboard::Key::Character("q") => Some(Message::Quit),
-                keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
-                keyboard::Key::Character("w") => Some(Message::ToggleWall),
-                keyboard::Key::Character("o") => Some(Message::OpenFile),
-                keyboard::Key::Character("R") => Some(Message::Rotate { clockwise: true }),
-                keyboard::Key::Character("r") if modifiers.shift() => {
-                    Some(Message::Rotate { clockwise: true })
-                }
-                keyboard::Key::Character("r") => Some(Message::Rotate { clockwise: false }),
-                // `key` is the base layout key (no modifiers), so Shift+/ shows
-                // up as "/" here; the actual "?" lives in `modified_key`.
-                _ if modified_key.as_ref() == keyboard::Key::Character("?") => {
-                    Some(Message::ToggleHelp)
-                }
-                _ => None,
-            }
-        });
+        // Two keyboards, one live at a time. A question on screen names its own
+        // answers, and those can be any letter, so the ordinary bindings would
+        // fight them (`o` opens a folder, `r` rotates). Swapping the whole map
+        // is what makes the overlay genuinely modal.
+        //
+        // iced requires these closures to capture nothing, so the choice is
+        // made out here rather than inside one of them.
+        let keys = if self.confirm.is_some() {
+            keyboard::listen().filter_map(answer_key)
+        } else {
+            keyboard::listen().filter_map(normal_key)
+        };
 
         // A resize changes the wall's column count, so the layout `update` uses
         // for navigation has to be re-measured against the new tree.
-        let mut subs = vec![keys, iced::window::resize_events().map(|_| Message::WallMeasure)];
+        let mut subs = vec![
+            keys,
+            iced::window::resize_events().map(|_| Message::WallMeasure),
+        ];
 
         // The window starts hidden; reveal it on its first rendered frame.
         // `frames()` only listens for `RedrawRequested` (it adds no redraws of
@@ -623,7 +843,11 @@ impl App {
             layers.push(help_overlay());
         }
         if let Some(confirm) = &self.confirm {
-            layers.push(confirm_overlay(&confirm.prompt));
+            layers.push(confirm_overlay(
+                &confirm.prompt,
+                confirm.detail.as_deref(),
+                &confirm.hint(),
+            ));
         }
 
         if layers.len() == 1 {
@@ -634,3 +858,83 @@ impl App {
     }
 }
 
+/// The keyboard while a question is up: the keys it names, and nothing else.
+fn answer_key(event: keyboard::Event) -> Option<Message> {
+    let keyboard::Event::KeyPressed { key, .. } = event else {
+        return None;
+    };
+    match key.as_ref() {
+        keyboard::Key::Named(Named::Enter) => Some(Message::Activate),
+        keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
+        keyboard::Key::Character("n") => Some(Message::ConfirmNo),
+        // Quitting still works: a question nobody can answer must never be able
+        // to trap the user in the app.
+        keyboard::Key::Character("q") => Some(Message::Quit),
+        keyboard::Key::Character(c) => {
+            let mut chars = c.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) => Some(Message::ConfirmChoice(c)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The ordinary keyboard. 0.14 unified keyboard subscriptions into a single
+/// `listen()` that emits raw `keyboard::Event`s; filter for key-presses here.
+fn normal_key(event: keyboard::Event) -> Option<Message> {
+    // Clicks read their modifiers from `App::modifiers`, since a `button` press
+    // carries none of its own.
+    if let keyboard::Event::ModifiersChanged(modifiers) = event {
+        return Some(Message::ModifiersChanged(modifiers));
+    }
+    let keyboard::Event::KeyPressed {
+        key,
+        modified_key,
+        modifiers,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    match key.as_ref() {
+        keyboard::Key::Named(Named::ArrowRight) => Some(Message::Nav(Dir::Right)),
+        keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Nav(Dir::Left)),
+        keyboard::Key::Named(Named::ArrowUp) => Some(Message::Nav(Dir::Up)),
+        keyboard::Key::Named(Named::ArrowDown) => Some(Message::Nav(Dir::Down)),
+        keyboard::Key::Named(Named::Enter) => Some(Message::Activate),
+        keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
+        keyboard::Key::Named(Named::Space) => Some(Message::ToggleSelected),
+        keyboard::Key::Character("l") => Some(Message::Nav(Dir::Right)),
+        keyboard::Key::Character("h") => Some(Message::Nav(Dir::Left)),
+        keyboard::Key::Character("k") => Some(Message::Nav(Dir::Up)),
+        keyboard::Key::Character("j") => Some(Message::Nav(Dir::Down)),
+        keyboard::Key::Character("v") => Some(Message::Visual { op: RangeOp::Add }),
+        keyboard::Key::Character("x") => Some(Message::Visual {
+            op: RangeOp::Remove,
+        }),
+        keyboard::Key::Character("i") => Some(Message::InvertSelection),
+        keyboard::Key::Character("d") => Some(Message::DeleteSelected),
+        keyboard::Key::Character("m") => Some(Message::Transfer {
+            kind: TransferKind::Move,
+        }),
+        keyboard::Key::Character("c") => Some(Message::Transfer {
+            kind: TransferKind::Copy,
+        }),
+        keyboard::Key::Character("a") if modifiers.command() => Some(Message::SelectAll),
+        keyboard::Key::Character("q") => Some(Message::Quit),
+        keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
+        keyboard::Key::Character("w") => Some(Message::ToggleWall),
+        keyboard::Key::Character("o") => Some(Message::OpenFile),
+        keyboard::Key::Character("R") => Some(Message::Rotate { clockwise: true }),
+        keyboard::Key::Character("r") if modifiers.shift() => {
+            Some(Message::Rotate { clockwise: true })
+        }
+        keyboard::Key::Character("r") => Some(Message::Rotate { clockwise: false }),
+        // `key` is the base layout key (no modifiers), so Shift+/ shows
+        // up as "/" here; the actual "?" lives in `modified_key`.
+        _ if modified_key.as_ref() == keyboard::Key::Character("?") => Some(Message::ToggleHelp),
+        _ => None,
+    }
+}

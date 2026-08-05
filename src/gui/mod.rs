@@ -13,7 +13,7 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 use crate::Message;
 
 const ICON_SIZE: f32 = 40.0;
-const ICON_MARGIN: f32 = 10.0;
+pub(crate) const ICON_MARGIN: f32 = 10.0;
 
 /// Shown in the help overlay, in press-order.
 const SHORTCUTS: &[(&str, &str)] = &[
@@ -21,13 +21,18 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2192} / l", "Next image / right"),
     ("\u{2191} / k", "Wall: up a row"),
     ("\u{2193} / j", "Wall: down a row"),
-    ("\u{21b5}", "Wall: open selected"),
+    ("\u{21b5}", "Wall: commit range, else open"),
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
     ("o", "Open file"),
+    ("v", "Wall: paint a range to select"),
+    ("x", "Wall: paint a range to deselect"),
+    ("Space", "Wall: select / deselect one"),
+    ("\u{2318}A", "Wall: select all"),
+    ("i", "Wall: invert selection"),
     ("e", "Fullscreen (toggle)"),
     ("?", "Show help (toggle)"),
-    ("Esc", "Close help"),
+    ("Esc", "Help, then range, then selection"),
     ("q", "Quit"),
 ];
 

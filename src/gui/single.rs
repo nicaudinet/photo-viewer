@@ -176,6 +176,7 @@ mod tests {
         SingleState::new(Library {
             paths: crate::pointed_list::PointedList::new(files).unwrap(),
             image_dir: PathBuf::from("/imgs"),
+            selection: HashSet::new(),
         })
     }
 

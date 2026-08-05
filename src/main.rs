@@ -42,7 +42,7 @@ use gui::empty::empty_view;
 use gui::help_overlay;
 use gui::single::{SingleMsg, SingleState};
 use gui::wall::{Dir, WallMsg, WallState};
-use library::{load_library, Library, IMAGE_EXTENSIONS};
+use library::{load_library, Library, RangeOp, IMAGE_EXTENSIONS};
 
 pub fn main() -> iced::Result {
     // Register the macOS open-file handler before the event loop starts, so a
@@ -114,8 +114,20 @@ enum Message {
     /// `r` / `Shift+R`: rotate the current image (single) or the selected
     /// thumbnail (wall). Both write the file to disk.
     Rotate { clockwise: bool },
-    /// Enter: open the selected thumbnail (wall only).
+    /// Enter: commit a painted range, else open the selected thumbnail (wall
+    /// only).
     Activate,
+
+    // Selection keys. Meaningful only on the wall, but the subscription can't
+    // see which screen is live, so they are dispatched in `App::update`.
+    /// `v` / `x`: paint a range that adds to / removes from the selection.
+    Visual { op: RangeOp },
+    /// `Space`: select or deselect the image under the cursor.
+    ToggleSelected,
+    /// `Cmd+A`.
+    SelectAll,
+    /// `i`.
+    InvertSelection,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it
     /// is only a trigger — `gui::wall::measure` reads the real number back.
@@ -214,6 +226,16 @@ impl App {
         }
     }
 
+    /// Hand a message to the wall, or drop it if the wall isn't on screen.
+    /// Selection lives on the wall alone: the single view has no selection to
+    /// show, so acting on one from there could only ever surprise.
+    fn wall_msg(&mut self, msg: WallMsg) -> Task<Message> {
+        match &mut self.screen {
+            Screen::Wall(w) => w.update(msg),
+            _ => Task::none(),
+        }
+    }
+
     /// The current library, whichever loaded view holds it.
     fn library(&self) -> Option<&Library> {
         match &self.screen {
@@ -237,9 +259,18 @@ impl App {
                 self.help_open = !self.help_open;
                 Task::none()
             }
+            // Esc is a ladder: the help overlay first, then the wall's own
+            // rungs (cancel a painted range, then clear the selection). One
+            // press is always one rung.
             Message::Escape => {
-                self.help_open = false;
-                Task::none()
+                if self.help_open {
+                    self.help_open = false;
+                    return Task::none();
+                }
+                match &mut self.screen {
+                    Screen::Wall(w) => w.update(WallMsg::Escape),
+                    _ => Task::none(),
+                }
             }
             Message::ToggleFullscreen => {
                 self.fullscreen = !self.fullscreen;
@@ -282,15 +313,22 @@ impl App {
                 Screen::Wall(w) => w.update(WallMsg::Rotate { clockwise }),
                 Screen::Empty => Task::none(),
             },
-            // In the wall, Enter opens whatever the ring is around; it means
-            // nothing on the other screens.
-            Message::Activate => match &self.screen {
+            // In the wall, Enter commits a painted range if one is in progress
+            // and otherwise opens whatever the ring is around; it means nothing
+            // on the other screens.
+            Message::Activate => match &mut self.screen {
+                Screen::Wall(w) if w.is_visual() => w.update(WallMsg::CommitVisual),
                 Screen::Wall(w) => {
                     let index = w.library.paths.index();
                     self.open_index(index)
                 }
                 _ => Task::none(),
             },
+
+            Message::Visual { op } => self.wall_msg(WallMsg::EnterVisual { op }),
+            Message::ToggleSelected => self.wall_msg(WallMsg::ToggleCursor),
+            Message::SelectAll => self.wall_msg(WallMsg::SelectAll),
+            Message::InvertSelection => self.wall_msg(WallMsg::InvertSelection),
             Message::WallMeasure => match &self.screen {
                 Screen::Wall(_) => gui::wall::measure(),
                 _ => Task::none(),
@@ -361,10 +399,15 @@ impl App {
                 keyboard::Key::Named(Named::ArrowDown) => Some(Message::Nav(Dir::Down)),
                 keyboard::Key::Named(Named::Enter) => Some(Message::Activate),
                 keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
+                keyboard::Key::Named(Named::Space) => Some(Message::ToggleSelected),
                 keyboard::Key::Character("l") => Some(Message::Nav(Dir::Right)),
                 keyboard::Key::Character("h") => Some(Message::Nav(Dir::Left)),
                 keyboard::Key::Character("k") => Some(Message::Nav(Dir::Up)),
                 keyboard::Key::Character("j") => Some(Message::Nav(Dir::Down)),
+                keyboard::Key::Character("v") => Some(Message::Visual { op: RangeOp::Add }),
+                keyboard::Key::Character("x") => Some(Message::Visual { op: RangeOp::Remove }),
+                keyboard::Key::Character("i") => Some(Message::InvertSelection),
+                keyboard::Key::Character("a") if modifiers.command() => Some(Message::SelectAll),
                 keyboard::Key::Character("q") => Some(Message::Quit),
                 keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),
                 keyboard::Key::Character("w") => Some(Message::ToggleWall),

@@ -1,5 +1,9 @@
 //! The wall view: async thumbnails laid out shortest-column masonry, with
-//! keyboard navigation, rotate, and click-to-open.
+//! keyboard navigation, rotate, click-to-open, and a modal selection.
+//!
+//! Selection is vim-shaped: [`WallMode::Normal`] moves a cursor,
+//! [`WallMode::Visual`] paints a range as the cursor moves, and
+//! [`WallMode::Select`] holds the committed set. See `SELECT_MODE_PLAN.md`.
 //!
 //! Layout runs in two phases. [`WallState::layout`] is a pure function from
 //! (viewport width, thumbnail heights) to a [`WallLayout`] — *where*
@@ -22,12 +26,14 @@ use iced::advanced::widget::operation::Outcome;
 use iced::advanced::widget::{operate, Id, Operation};
 use iced::theme::palette::lighten;
 use iced::widget::operation::{scroll_to, AbsoluteOffset};
-use iced::widget::{button, container, image, scrollable, text, Column, Row};
+use iced::alignment::{Horizontal, Vertical};
+use iced::widget::{button, container, image, scrollable, text, Column, Row, Space, Stack};
 use iced::{
     Background, Border, Color, Element, Length, Rectangle, Shadow, Size, Task, Theme, Vector,
 };
 
-use crate::library::Library;
+use super::ICON_MARGIN;
+use crate::library::{Library, RangeOp};
 use crate::Message;
 
 /// Thumbnail column width and inter-item spacing (matches the Python wall).
@@ -45,9 +51,15 @@ const WALL_SPACING: f32 = 12.0;
 const SEL_BORDER: f32 = 4.0;
 /// A thumbnail plus its selection ring: what the masonry actually places.
 const TILE_WIDTH: f32 = THUMB_WIDTH as f32 + 2.0 * SEL_BORDER;
-/// How far the selection ring is lifted off the theme's primary colour (OKLCH
-/// lightness). On the dark theme this takes `#5865F2` to `#8B8BFF`.
+/// How far an accent ring is lifted off its palette colour (OKLCH lightness).
+/// On the dark theme this takes the primary `#5865F2` to `#8B8BFF`.
 const SEL_LIGHTEN: f32 = 0.25;
+/// Tint alpha over a committed selection, and over a range still being painted.
+/// The pending one is lighter so an uncommitted range never looks decided.
+const TINT_COMMITTED: f32 = 0.32;
+const TINT_PENDING: f32 = 0.18;
+/// Height of the mode bar along the bottom (hidden in `Normal`).
+const BAR_HEIGHT: f32 = 34.0;
 
 /// Identifies the wall's scrollable so [`measure`] and [`WallState::reveal`]
 /// can target it.
@@ -76,6 +88,22 @@ pub(crate) enum Dir {
     Right,
 }
 
+/// Which selection mode the wall is in.
+///
+/// There is exactly one cursor — `library.paths.index()` — and it moves in
+/// every mode. `Visual` adds only an anchor; the moving end of the painted
+/// range *is* the cursor, which is why navigation needs no special case for it.
+///
+/// Invariant, restored by [`WallState::settle`] after every selection change:
+/// outside `Visual`, the mode is `Select` exactly when the selection is
+/// non-empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WallMode {
+    Normal,
+    Visual { anchor: usize, op: RangeOp },
+    Select,
+}
+
 /// Messages produced only while the wall view is on screen. Routed to
 /// [`WallState::update`] by `App::update`.
 #[derive(Debug, Clone)]
@@ -102,6 +130,18 @@ pub(crate) enum WallMsg {
         path: PathBuf,
         result: Result<(), String>,
     },
+    /// `v` / `x`: start painting a range from the cursor — or, pressed while
+    /// already painting one, cancel it.
+    EnterVisual { op: RangeOp },
+    /// Enter: fold the painted range into the selection.
+    CommitVisual,
+    /// `Space`: add or remove the single image under the cursor.
+    ToggleCursor,
+    /// `Cmd+A` / `i`.
+    SelectAll,
+    InvertSelection,
+    /// Esc: one rung down the ladder (cancel the range, else clear the set).
+    Escape,
 }
 
 /// A decoded thumbnail: the RGBA handle plus its scaled pixel size (needed for
@@ -163,10 +203,19 @@ pub(crate) struct WallState {
     /// Sticky vertical centre for runs of left/right moves, so `h` then `l`
     /// returns to where it started instead of drifting.
     desired_y: Option<f32>,
+    mode: WallMode,
 }
 
 impl WallState {
     pub(crate) fn new(library: Library) -> Self {
+        // The mode is derived, not carried: a selection that survived a trip
+        // through the single view puts the wall straight back into `Select`.
+        // A range being painted does not survive — it is inherently transient.
+        let mode = if library.selection.is_empty() {
+            WallMode::Normal
+        } else {
+            WallMode::Select
+        };
         Self {
             library,
             thumbs: HashMap::new(),
@@ -178,7 +227,13 @@ impl WallState {
             scroll_y: 0.0,
             focus: 0.0,
             desired_y: None,
+            mode,
         }
+    }
+
+    /// Whether Enter should commit a painted range rather than open an image.
+    pub(crate) fn is_visual(&self) -> bool {
+        matches!(self.mode, WallMode::Visual { .. })
     }
 
     /// Everything the wall needs on entry: measure the viewport, read the
@@ -238,7 +293,102 @@ impl WallState {
             WallMsg::Nav(dir) => self.navigate(dir),
             WallMsg::Rotate { clockwise } => self.rotate(clockwise),
             WallMsg::Rotated { path, result } => self.rotated(path, result),
+            WallMsg::EnterVisual { op } => self.enter_visual(op),
+            WallMsg::CommitVisual => self.commit_visual(),
+            // These three edit the committed set, and `settle` would drop the
+            // mode back out of `Visual` — so mid-paint they are ignored rather
+            // than allowed to end the range behind the user's back. Finish or
+            // cancel the range first.
+            WallMsg::ToggleCursor if self.is_visual() => Task::none(),
+            WallMsg::SelectAll if self.is_visual() => Task::none(),
+            WallMsg::InvertSelection if self.is_visual() => Task::none(),
+            WallMsg::ToggleCursor => {
+                self.library.toggle_selected(self.library.paths.index());
+                self.settle()
+            }
+            WallMsg::SelectAll => {
+                self.library.select_all();
+                self.settle()
+            }
+            WallMsg::InvertSelection => {
+                self.library.invert_selection();
+                self.settle()
+            }
+            WallMsg::Escape => self.escape(),
         }
+    }
+
+    /// Start painting a range from the cursor. Pressing the same key again
+    /// while painting cancels, as `v` does in vim.
+    fn enter_visual(&mut self, op: RangeOp) -> Task<Message> {
+        match self.mode {
+            WallMode::Visual { .. } => self.escape(),
+            // `x` means "remove a run", which is meaningless with nothing
+            // selected — and entering a mode that can only be a no-op would
+            // just strand the user in it.
+            WallMode::Normal if op == RangeOp::Remove => Task::none(),
+            WallMode::Normal | WallMode::Select => {
+                self.mode = WallMode::Visual {
+                    anchor: self.library.paths.index(),
+                    op,
+                };
+                self.remeasure()
+            }
+        }
+    }
+
+    /// Fold the painted range into the selection and leave `Visual`. The cursor
+    /// stays where it is: the range's far end is where the user is looking.
+    fn commit_visual(&mut self) -> Task<Message> {
+        let WallMode::Visual { anchor, op } = self.mode else {
+            return Task::none();
+        };
+        self.library.apply_range(anchor, self.library.paths.index(), op);
+        self.settle()
+    }
+
+    /// One rung down the Esc ladder. From `Visual` it drops the painted range
+    /// and returns the cursor to the anchor — the trip was cancelled, so it
+    /// ends where it began. From `Select` it clears the set and leaves the
+    /// cursor alone, because there the user moved it deliberately.
+    ///
+    /// `Visual` entered from `Select` therefore takes two presses to leave
+    /// entirely: one keypress must not discard a large selection.
+    fn escape(&mut self) -> Task<Message> {
+        match self.mode {
+            WallMode::Visual { anchor, .. } => {
+                self.library.goto(anchor);
+                self.desired_y = None;
+                let settle = self.settle();
+                let reveal = match self.viewport {
+                    Some(viewport) => self.reveal(&self.layout(viewport.width)),
+                    None => Task::none(),
+                };
+                Task::batch([settle, reveal, self.schedule()])
+            }
+            WallMode::Select => {
+                self.library.clear_selection();
+                self.settle()
+            }
+            WallMode::Normal => Task::none(),
+        }
+    }
+
+    /// Restore the mode invariant after a change to the selection, and
+    /// re-measure in case the mode bar appeared or disappeared.
+    fn settle(&mut self) -> Task<Message> {
+        self.mode = if self.library.selection.is_empty() {
+            WallMode::Normal
+        } else {
+            WallMode::Select
+        };
+        self.remeasure()
+    }
+
+    /// The mode bar takes height from the scroll viewport, and `reveal` scrolls
+    /// against that height — so showing or hiding it has to be measured again.
+    fn remeasure(&self) -> Task<Message> {
+        measure()
     }
 
     /// Rotate the selected image 90° on disk, off-thread. Ignored while a
@@ -517,11 +667,81 @@ impl WallState {
             .width(Length::Fill)
             .center_x(Length::Fill)
             .padding(WALL_SPACING);
-        scrollable(centered)
+        let wall = scrollable(centered)
             .id(WALL_ID)
             .on_scroll(|viewport| Message::Wall(WallMsg::Scrolled(viewport.absolute_offset().y)))
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        match self.mode_bar() {
+            // Below the wall rather than over it: with no cursor ring to look
+            // for in `Visual`, the bar is the only thing saying which mode is
+            // live, so it must not be able to hide behind a thumbnail.
+            Some(bar) => Column::with_children(vec![wall.into(), bar]).into(),
+            None => wall.into(),
+        }
+    }
+
+    /// The mode indicator along the bottom, or `None` in `Normal` — where there
+    /// is no mode to indicate and nothing to say.
+    fn mode_bar(&self) -> Option<Element<'_, Message>> {
+        let (label, hint) = match self.mode {
+            WallMode::Normal => return None,
+            WallMode::Visual { anchor, op } => {
+                let (total, delta) = self.pending_counts(anchor, op);
+                let verb = match op {
+                    RangeOp::Add => "add",
+                    RangeOp::Remove => "remove",
+                };
+                (
+                    format!("-- VISUAL ({verb}) -- {total} ({delta:+})"),
+                    "\u{21b5} commit \u{b7} Esc cancel",
+                )
+            }
+            WallMode::Select => (
+                format!("SELECT {}", self.library.selection.len()),
+                "v add \u{b7} x remove \u{b7} Space toggle \u{b7} \u{2318}A all \u{b7} i invert \u{b7} Esc clear",
+            ),
+        };
+
+        Some(
+            container(
+                Row::with_children(vec![
+                    text(label).size(14).into(),
+                    Space::new().width(Length::Fill).into(),
+                    text(hint).size(13).style(text::secondary).into(),
+                ])
+                .align_y(Vertical::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(BAR_HEIGHT))
+            .padding([0, 12])
+            .align_y(Vertical::Center)
+            .style(mode_bar_style)
+            .into(),
+        )
+    }
+
+    /// What the painted range would leave selected: the resulting total, and
+    /// the signed change. Shown live so a range is never committed blind.
+    fn pending_counts(&self, anchor: usize, op: RangeOp) -> (usize, i64) {
+        let cursor = self.library.paths.index();
+        let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+        let touched = self
+            .library
+            .paths
+            .iter()
+            .skip(lo)
+            .take(hi + 1 - lo)
+            .filter(|p| match op {
+                RangeOp::Add => !self.library.is_selected(p),
+                RangeOp::Remove => self.library.is_selected(p),
+            })
+            .count();
+        let current = self.library.selection.len();
+        match op {
+            RangeOp::Add => (current + touched, touched as i64),
+            RangeOp::Remove => (current - touched, -(touched as i64)),
+        }
     }
 
     /// Turn a computed [`WallLayout`] into the column-of-thumbnails widget tree.
@@ -550,14 +770,15 @@ impl WallState {
         Row::with_children(columns).spacing(WALL_SPACING).into()
     }
 
-    /// One thumbnail: image (or placeholder), clickable, with a highlight
-    /// border when it is the current image.
+    /// One thumbnail: image (or placeholder), clickable, decorated according to
+    /// [`WallState::tile_look`].
     fn thumb_element<'a>(
         &'a self,
         index: usize,
         path: &'a PathBuf,
         current: usize,
     ) -> Element<'a, Message> {
+        let height = self.tile_height(path);
         let inner: Element<'a, Message> = match self.thumbs.get(path) {
             Some(thumb) => image(thumb.handle.clone())
                 .width(Length::Fixed(THUMB_WIDTH as f32))
@@ -567,19 +788,152 @@ impl WallState {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .width(Length::Fixed(THUMB_WIDTH as f32))
-                .height(Length::Fixed(self.tile_height(path)))
+                .height(Length::Fixed(height))
                 .style(placeholder_style)
                 .into(),
         };
 
-        let selected = index == current;
-        button(inner)
-            // Inset the content so the selection ring isn't drawn over it.
+        let look = self.tile_look(index, path, current);
+
+        // Layers over the thumbnail, sized to it explicitly rather than left to
+        // fill: a `Stack` takes its size from the first child, and the decoded
+        // height and the header-derived one can differ by a pixel.
+        let mut layers: Vec<Element<'a, Message>> = vec![inner];
+        if let Some(accent) = look.tint {
+            let alpha = look.tint_alpha;
+            layers.push(
+                container(Space::new())
+                    .width(Length::Fixed(THUMB_WIDTH as f32))
+                    .height(Length::Fixed(height))
+                    .style(move |theme: &Theme| container::Style {
+                        background: Some(Background::Color(Color {
+                            a: alpha,
+                            ..accent_color(theme, accent)
+                        })),
+                        ..container::Style::default()
+                    })
+                    .into(),
+            );
+        }
+        if look.badge {
+            layers.push(corner_check());
+        }
+
+        let body: Element<'a, Message> = if layers.len() == 1 {
+            layers.pop().unwrap()
+        } else {
+            Stack::with_children(layers).into()
+        };
+
+        let ring = look.ring;
+        button(body)
+            // Inset the content so the ring isn't drawn over it.
             .padding(SEL_BORDER)
             .on_press(Message::ThumbClicked(index))
-            .style(move |theme: &Theme, _status| thumb_button_style(theme, selected))
+            .style(move |theme: &Theme, _status| thumb_button_style(theme, ring))
             .into()
     }
+
+    /// How one tile is decorated.
+    ///
+    /// Two independent channels, so a tile can say two things at once: the ring
+    /// is where the cursor is, the tint and badge are what is selected. The
+    /// cursor ring is hidden in `Visual` — the leading edge of the painted
+    /// range already shows where the cursor is, and a second highlight
+    /// competing with the tint just reads as noise.
+    fn tile_look(&self, index: usize, path: &std::path::Path, current: usize) -> TileLook {
+        let selected = self.library.is_selected(path);
+        let pending = match self.mode {
+            WallMode::Visual { anchor, op } => {
+                let (lo, hi) = (anchor.min(current), anchor.max(current));
+                (lo..=hi).contains(&index).then_some(op)
+            }
+            _ => None,
+        };
+
+        let cursor = index == current && !self.is_visual();
+        let ring = if cursor {
+            // The cursor wins the ring: it is the thing that moves, so it has
+            // to stay findable. Selection still shows through tint and badge.
+            Some(Accent::Cursor)
+        } else {
+            match pending {
+                Some(RangeOp::Add) => Some(Accent::Select),
+                Some(RangeOp::Remove) => Some(Accent::Remove),
+                None => selected.then_some(Accent::Select),
+            }
+        };
+
+        let (tint, tint_alpha) = match pending {
+            Some(RangeOp::Add) => (Some(Accent::Select), TINT_PENDING),
+            Some(RangeOp::Remove) => (Some(Accent::Remove), TINT_PENDING),
+            None if selected => (Some(Accent::Select), TINT_COMMITTED),
+            None => (None, 0.0),
+        };
+
+        TileLook {
+            ring,
+            tint,
+            tint_alpha,
+            // Kept on a tile pending removal: it is still selected until the
+            // range is committed, and saying otherwise would pre-empt the user.
+            badge: selected,
+        }
+    }
+}
+
+/// How one tile is decorated. `ring` is the border colour, `tint` a
+/// translucent wash over the thumbnail, `badge` the corner checkmark.
+#[derive(Clone, Copy)]
+struct TileLook {
+    ring: Option<Accent>,
+    tint: Option<Accent>,
+    tint_alpha: f32,
+    badge: bool,
+}
+
+/// The three things a tile can be saying, mapped to palette colours by
+/// [`accent_color`]. Distinct hues, not shades of one: cursor and selection
+/// have to be told apart at a glance across a wall of photos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Accent {
+    Cursor,
+    Select,
+    Remove,
+}
+
+fn accent_color(theme: &Theme, accent: Accent) -> Color {
+    let palette = theme.extended_palette();
+    match accent {
+        // `primary.strong` is only a 0.10 lift off the base; take a bigger one
+        // so the ring reads clearly against dark thumbnails.
+        Accent::Cursor => lighten(palette.primary.base.color, SEL_LIGHTEN),
+        Accent::Select => lighten(palette.success.base.color, SEL_LIGHTEN),
+        Accent::Remove => lighten(palette.danger.base.color, SEL_LIGHTEN),
+    }
+}
+
+/// The selected-tile badge: a checkmark in the top-right corner, so selection
+/// is never carried by hue alone.
+fn corner_check() -> Element<'static, Message> {
+    container(
+        container(text("\u{2713}").size(18).color(Color::WHITE))
+            .padding([1, 7])
+            .style(|theme: &Theme| container::Style {
+                background: Some(Background::Color(accent_color(theme, Accent::Select))),
+                border: Border {
+                    radius: 999.0.into(),
+                    ..Border::default()
+                },
+                ..container::Style::default()
+            }),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_x(Horizontal::Right)
+    .align_y(Vertical::Top)
+    .padding(ICON_MARGIN)
+    .into()
 }
 
 /// Read the wall scrollable's viewport size back out of the laid-out widget
@@ -710,27 +1064,35 @@ fn prioritise<'a>(
     candidates.into_iter().take(free).map(|(_, p)| p).collect()
 }
 
-fn thumb_button_style(theme: &Theme, selected: bool) -> button::Style {
+fn thumb_button_style(theme: &Theme, ring: Option<Accent>) -> button::Style {
     let palette = theme.extended_palette();
     button::Style {
         background: None,
         text_color: palette.background.base.text,
-        // Always the same width — only the colour changes — so selecting a
+        // Always the same width — only the colour changes — so decorating a
         // thumbnail never shifts the masonry.
         border: Border {
-            color: if selected {
-                // `primary.strong` is only a 0.10 lift off the base; take a
-                // bigger one so the ring reads clearly against dark thumbnails.
-                lighten(palette.primary.base.color, SEL_LIGHTEN)
-            } else {
-                Color::TRANSPARENT
-            },
+            color: ring.map_or(Color::TRANSPARENT, |a| accent_color(theme, a)),
             width: SEL_BORDER,
             radius: 0.0.into(),
         },
         shadow: Shadow::default(),
         // 0.14 added pixel-grid snapping; keep the non-crisp default.
         snap: false,
+    }
+}
+
+fn mode_bar_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(Background::Color(palette.background.weak.color)),
+        text_color: Some(palette.background.base.text),
+        border: Border {
+            color: palette.background.strong.color,
+            width: 1.0,
+            radius: 0.0.into(),
+        },
+        ..container::Style::default()
     }
 }
 
@@ -745,6 +1107,7 @@ fn placeholder_style(theme: &Theme) -> container::Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn paths(n: usize) -> Vec<PathBuf> {
         (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect()
@@ -758,6 +1121,7 @@ mod tests {
         let library = Library {
             paths: crate::pointed_list::PointedList::new(files.clone()).unwrap(),
             image_dir: PathBuf::from("/wall"),
+            selection: HashSet::new(),
         };
         let mut state = WallState::new(library);
         state.ratios = files.into_iter().zip(heights.iter().copied()).collect();
@@ -885,6 +1249,310 @@ mod tests {
         // Now anchored on 1 (centre 212), not the stale 382, so left gives 0.
         let _ = state.update(WallMsg::Nav(Dir::Left));
         assert_eq!(state.library.paths.index(), 0);
+    }
+
+    // --- Selection modes ---
+
+    /// The selected library indices, sorted — the selection is by path, but
+    /// indices are what the tests reason in.
+    fn selected(state: &WallState) -> Vec<usize> {
+        state
+            .library
+            .paths
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| state.library.is_selected(p))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn enter_visual(state: &mut WallState, op: RangeOp) {
+        let _ = state.update(WallMsg::EnterVisual { op });
+    }
+
+    fn nav(state: &mut WallState, dir: Dir) {
+        let _ = state.update(WallMsg::Nav(dir));
+    }
+
+    #[test]
+    fn a_committed_range_selects_the_whole_run() {
+        // One column, so `j` moves one library index at a time.
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::CommitVisual);
+
+        assert_eq!(selected(&state), vec![0, 1, 2]);
+        assert_eq!(state.mode, WallMode::Select);
+        // The cursor stays at the far end of the range, where the user is
+        // looking — it does not snap back to the anchor.
+        assert_eq!(state.library.paths.index(), 2);
+    }
+
+    #[test]
+    fn a_range_painted_upwards_covers_the_same_run() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(4);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Up);
+        nav(&mut state, Dir::Up);
+        let _ = state.update(WallMsg::CommitVisual);
+        assert_eq!(selected(&state), vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn escape_from_visual_cancels_and_returns_the_cursor() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::Escape);
+
+        assert!(state.library.selection.is_empty());
+        assert_eq!(state.mode, WallMode::Normal);
+        // The trip was cancelled, so it ends where it began.
+        assert_eq!(state.library.paths.index(), 1);
+    }
+
+    #[test]
+    fn v_pressed_twice_cancels_like_vim() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        enter_visual(&mut state, RangeOp::Add);
+        assert_eq!(state.mode, WallMode::Normal);
+        assert!(state.library.selection.is_empty());
+    }
+
+    #[test]
+    fn a_second_range_unions_into_the_selection() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::CommitVisual); // 0..=1
+
+        state.library.goto(4);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::CommitVisual); // 4..=5
+
+        // Editing a selection is re-entering visual: runs accumulate.
+        assert_eq!(selected(&state), vec![0, 1, 4, 5]);
+    }
+
+    #[test]
+    fn x_paints_a_range_that_subtracts() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::SelectAll);
+
+        state.library.goto(1);
+        enter_visual(&mut state, RangeOp::Remove);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::CommitVisual);
+
+        assert_eq!(selected(&state), vec![0, 3, 4, 5]);
+        assert_eq!(state.mode, WallMode::Select);
+    }
+
+    #[test]
+    fn x_does_nothing_with_an_empty_selection() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Remove);
+        // Entering a mode whose only possible outcome is a no-op would just
+        // strand the user in it.
+        assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn set_edits_are_ignored_mid_paint() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+
+        // Each of these edits the committed set, so honouring it would settle
+        // the mode and end the range without the user saying so.
+        for msg in [
+            WallMsg::ToggleCursor,
+            WallMsg::SelectAll,
+            WallMsg::InvertSelection,
+        ] {
+            let _ = state.update(msg);
+            assert_eq!(
+                state.mode,
+                WallMode::Visual {
+                    anchor: 0,
+                    op: RangeOp::Add
+                }
+            );
+            assert!(state.library.selection.is_empty());
+        }
+    }
+
+    #[test]
+    fn escape_from_select_clears_but_leaves_the_cursor() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(3);
+        let _ = state.update(WallMsg::ToggleCursor);
+        assert_eq!(state.mode, WallMode::Select);
+
+        let _ = state.update(WallMsg::Escape);
+        assert!(state.library.selection.is_empty());
+        assert_eq!(state.mode, WallMode::Normal);
+        // In `Select` the user moves the cursor deliberately, so it stays put.
+        assert_eq!(state.library.paths.index(), 3);
+    }
+
+    #[test]
+    fn visual_over_select_takes_two_escapes_to_leave() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::ToggleCursor); // select 0
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+
+        // One press must not discard a selection built up over many moves.
+        let _ = state.update(WallMsg::Escape);
+        assert_eq!(state.mode, WallMode::Select);
+        assert_eq!(selected(&state), vec![0]);
+
+        let _ = state.update(WallMsg::Escape);
+        assert_eq!(state.mode, WallMode::Normal);
+        assert!(state.library.selection.is_empty());
+    }
+
+    #[test]
+    fn toggling_the_last_selected_image_returns_to_normal() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::ToggleCursor);
+        assert_eq!(state.mode, WallMode::Select);
+        let _ = state.update(WallMsg::ToggleCursor);
+        // The invariant: no mode bar and no `Select` with nothing selected.
+        assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn select_all_and_invert_move_into_and_out_of_select() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::SelectAll);
+        assert_eq!(selected(&state), vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(state.mode, WallMode::Select);
+
+        let _ = state.update(WallMsg::InvertSelection);
+        assert!(state.library.selection.is_empty());
+        assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn a_selection_survives_a_trip_through_the_single_view() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::ToggleCursor);
+
+        // `w` moves the library across and rebuilds the wall from it; the mode
+        // is derived from the selection rather than carried.
+        let rebuilt = WallState::new(state.library);
+        assert_eq!(rebuilt.mode, WallMode::Select);
+        assert_eq!(selected(&rebuilt), vec![0]);
+    }
+
+    #[test]
+    fn a_painted_range_does_not_survive_that_trip() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+
+        let rebuilt = WallState::new(state.library);
+        assert_eq!(rebuilt.mode, WallMode::Normal);
+        assert!(rebuilt.library.selection.is_empty());
+    }
+
+    // --- Tile decoration ---
+
+    #[test]
+    fn the_cursor_ring_is_hidden_while_painting() {
+        let mut state = wall(&[200.0; 6], 1);
+        let path = state.library.current().clone();
+        assert_eq!(state.tile_look(0, &path, 0).ring, Some(Accent::Cursor));
+
+        enter_visual(&mut state, RangeOp::Add);
+        // In `Visual` the leading edge of the range already shows the cursor;
+        // a second highlight competing with the tint just reads as noise.
+        assert_eq!(state.tile_look(0, &path, 0).ring, Some(Accent::Select));
+    }
+
+    #[test]
+    fn a_pending_range_is_tinted_more_faintly_than_a_committed_one() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+
+        let pending = state.tile_look(1, &paths[1], 1);
+        assert_eq!(pending.tint, Some(Accent::Select));
+        assert_eq!(pending.tint_alpha, TINT_PENDING);
+        assert!(!pending.badge);
+
+        let _ = state.update(WallMsg::CommitVisual);
+        let committed = state.tile_look(1, &paths[1], 1);
+        assert_eq!(committed.tint_alpha, TINT_COMMITTED);
+        assert!(committed.badge);
+    }
+
+    #[test]
+    fn a_tile_pending_removal_keeps_its_badge() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let _ = state.update(WallMsg::SelectAll);
+        enter_visual(&mut state, RangeOp::Remove);
+
+        let look = state.tile_look(0, &paths[0], 0);
+        assert_eq!(look.tint, Some(Accent::Remove));
+        // Still selected until the range is committed; saying otherwise would
+        // pre-empt the user.
+        assert!(look.badge);
+    }
+
+    #[test]
+    fn tiles_outside_the_range_are_undecorated() {
+        let mut state = wall(&[200.0; 6], 1);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        enter_visual(&mut state, RangeOp::Add);
+
+        let look = state.tile_look(3, &paths[3], 0);
+        assert_eq!(look.ring, None);
+        assert_eq!(look.tint, None);
+        assert!(!look.badge);
+    }
+
+    #[test]
+    fn the_bar_counts_what_committing_would_leave_selected() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::ToggleCursor); // select 0
+
+        state.library.goto(2);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down); // range 2..=3, neither selected
+        assert_eq!(state.pending_counts(2, RangeOp::Add), (3, 2));
+    }
+
+    #[test]
+    fn the_bar_does_not_double_count_an_overlapping_range() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::SelectAll);
+        state.library.goto(1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        // Everything in 1..=2 is already selected: committing changes nothing.
+        assert_eq!(state.pending_counts(1, RangeOp::Add), (6, 0));
+    }
+
+    #[test]
+    fn the_bar_counts_a_removal_downwards() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::SelectAll);
+        state.library.goto(1);
+        enter_visual(&mut state, RangeOp::Remove);
+        nav(&mut state, Dir::Down);
+        assert_eq!(state.pending_counts(1, RangeOp::Remove), (4, -2));
     }
 
     /// A 1x1 stand-in for a decoded thumbnail of the given height.

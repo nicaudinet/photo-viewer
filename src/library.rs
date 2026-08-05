@@ -1,4 +1,5 @@
-//! The GUI-free domain core: the image collection for one open directory.
+//! The GUI-free domain core: the image collection for one open directory, plus
+//! the user's selection within it.
 //!
 //! Favourites and mark-to-delete used to live here, along with their
 //! `<image_dir>/.photo-viewer/` cache. Both were removed (see
@@ -6,6 +7,7 @@
 //! selection machinery. Any `.photo-viewer/` directories left on disk are inert
 //! and deliberately not cleaned up: phase 6 will want to read them.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,6 +59,14 @@ pub struct Library {
     /// went away; the move/copy destination picker (phase 5) wants it back.
     #[allow(dead_code)]
     pub image_dir: PathBuf,
+    /// The images the user has selected, as paths rather than indices:
+    /// deleting or moving files renumbers `paths`, and an index-keyed selection
+    /// would silently come to mean different images.
+    ///
+    /// Deliberately not persisted — it is a scratch buffer, not a judgement
+    /// about the photos. It lives here rather than in the wall so that it
+    /// survives a switch to the single view and back.
+    pub selection: HashSet<PathBuf>,
 }
 
 impl Library {
@@ -77,6 +87,70 @@ impl Library {
     pub fn goto(&mut self, index: usize) -> bool {
         self.paths.goto(index)
     }
+
+    // --- Selection ---
+
+    pub fn is_selected(&self, path: &Path) -> bool {
+        self.selection.contains(path)
+    }
+
+    /// Add or remove the image at `index`, whichever it isn't already.
+    pub fn toggle_selected(&mut self, index: usize) {
+        let Some(path) = self.paths.iter().nth(index).cloned() else {
+            return;
+        };
+        if !self.selection.remove(&path) {
+            self.selection.insert(path);
+        }
+    }
+
+    /// Apply `op` to every image in the inclusive index range between `a` and
+    /// `b`. The two ends may be given in either order — a range painted upwards
+    /// covers the same images as the same range painted downwards.
+    pub fn apply_range(&mut self, a: usize, b: usize, op: RangeOp) {
+        let (lo, hi) = (a.min(b), a.max(b));
+        let paths: Vec<PathBuf> = self
+            .paths
+            .iter()
+            .skip(lo)
+            .take(hi + 1 - lo)
+            .cloned()
+            .collect();
+        for path in paths {
+            match op {
+                RangeOp::Add => {
+                    self.selection.insert(path);
+                }
+                RangeOp::Remove => {
+                    self.selection.remove(&path);
+                }
+            }
+        }
+    }
+
+    pub fn select_all(&mut self) {
+        self.selection = self.paths.iter().cloned().collect();
+    }
+
+    pub fn invert_selection(&mut self) {
+        self.selection = self
+            .paths
+            .iter()
+            .filter(|p| !self.selection.contains(*p))
+            .cloned()
+            .collect();
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection.clear();
+    }
+}
+
+/// What a painted range does to the selection when it is committed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RangeOp {
+    Add,
+    Remove,
 }
 
 /// Scan `image_dir` for images.
@@ -106,6 +180,7 @@ pub fn load_library(image_dir: &Path) -> Result<Option<Library>, LibraryError> {
     Ok(Some(Library {
         paths,
         image_dir: image_dir.to_path_buf(),
+        selection: HashSet::new(),
     }))
 }
 
@@ -160,8 +235,16 @@ mod tests {
         let lib = Library {
             paths: PointedList::new(images.clone()).unwrap(),
             image_dir: dir.clone(),
+            selection: HashSet::new(),
         };
         Fixture { dir, images, lib }
+    }
+
+    /// The selection as sorted paths, for order-independent comparison.
+    fn selected(lib: &Library) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = lib.selection.iter().cloned().collect();
+        out.sort();
+        out
     }
 
     // --- Navigation ---
@@ -191,7 +274,131 @@ mod tests {
         assert_eq!(lib.current(), &f.images[2]);
     }
 
+    // --- Selection ---
+
+    #[test]
+    fn toggle_selects_then_deselects() {
+        let f = fixture("sel-toggle");
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(1);
+        assert_eq!(selected(&lib), vec![f.images[1].clone()]);
+        lib.toggle_selected(1);
+        assert!(lib.selection.is_empty());
+    }
+
+    #[test]
+    fn toggle_out_of_range_is_a_noop() {
+        let f = fixture("sel-toggle-oob");
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(99);
+        assert!(lib.selection.is_empty());
+    }
+
+    #[test]
+    fn apply_range_adds_the_whole_run() {
+        let f = fixture("sel-range");
+        let mut lib = f.lib.clone();
+        lib.apply_range(0, 1, RangeOp::Add);
+        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[1].clone()]);
+    }
+
+    #[test]
+    fn apply_range_is_the_same_in_both_directions() {
+        let f = fixture("sel-range-dir");
+        let mut up = f.lib.clone();
+        let mut down = f.lib.clone();
+        // Painting a range upwards must cover the same images as painting the
+        // same range downwards — the anchor can be either end.
+        up.apply_range(0, 2, RangeOp::Add);
+        down.apply_range(2, 0, RangeOp::Add);
+        assert_eq!(selected(&up), selected(&down));
+        assert_eq!(selected(&up).len(), 3);
+    }
+
+    #[test]
+    fn apply_range_of_one_selects_one() {
+        let f = fixture("sel-range-single");
+        let mut lib = f.lib.clone();
+        lib.apply_range(1, 1, RangeOp::Add);
+        assert_eq!(selected(&lib), vec![f.images[1].clone()]);
+    }
+
+    #[test]
+    fn apply_range_add_is_a_union_not_a_replacement() {
+        let f = fixture("sel-range-union");
+        let mut lib = f.lib.clone();
+        lib.apply_range(0, 0, RangeOp::Add);
+        lib.apply_range(2, 2, RangeOp::Add);
+        // The first run survives the second: scattered runs accumulate.
+        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn apply_range_remove_subtracts_only_that_run() {
+        let f = fixture("sel-range-remove");
+        let mut lib = f.lib.clone();
+        lib.select_all();
+        lib.apply_range(0, 1, RangeOp::Remove);
+        assert_eq!(selected(&lib), vec![f.images[2].clone()]);
+    }
+
+    #[test]
+    fn removing_an_unselected_run_is_harmless() {
+        let f = fixture("sel-range-remove-noop");
+        let mut lib = f.lib.clone();
+        lib.apply_range(0, 2, RangeOp::Remove);
+        assert!(lib.selection.is_empty());
+    }
+
+    #[test]
+    fn select_all_takes_the_whole_library() {
+        let f = fixture("sel-all");
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(0);
+        lib.select_all();
+        assert_eq!(selected(&lib), f.images);
+    }
+
+    #[test]
+    fn invert_swaps_selected_and_unselected() {
+        let f = fixture("sel-invert");
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(1);
+        lib.invert_selection();
+        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn inverting_nothing_selects_everything() {
+        let f = fixture("sel-invert-empty");
+        let mut lib = f.lib.clone();
+        lib.invert_selection();
+        assert_eq!(selected(&lib), f.images);
+        // And back again.
+        lib.invert_selection();
+        assert!(lib.selection.is_empty());
+    }
+
+    #[test]
+    fn clear_empties_the_selection() {
+        let f = fixture("sel-clear");
+        let mut lib = f.lib.clone();
+        lib.select_all();
+        lib.clear_selection();
+        assert!(lib.selection.is_empty());
+    }
+
     // --- load_library ---
+
+    #[test]
+    fn load_starts_with_nothing_selected() {
+        let dir = unique_dir("load-sel");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.png"), "image").unwrap();
+        let lib = load_library(&dir).unwrap().unwrap();
+        let _ = fs::remove_dir_all(&dir);
+        assert!(lib.selection.is_empty());
+    }
 
     #[test]
     fn load_errors_if_dir_missing() {

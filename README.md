@@ -42,11 +42,37 @@ Every action in the single view applies to the current image and nothing else.
 | `→` / `l` | Move the selection right |
 | `↑` / `k` | Move the selection up a row |
 | `↓` / `j` | Move the selection down a row |
-| `Enter` | Open the selected image in single view |
+| `Enter` | Commit a painted range, else open the image in single view |
 | `r` | Rotate the selected image anticlockwise 90° |
 | `Shift+R` | Rotate the selected image clockwise 90° |
 | `w` | Switch to single view |
 | click | Go to that image in single view |
+
+#### Selection
+
+Selecting is modal, in the vim sense. `NORMAL` moves a cursor. `v` enters
+`VISUAL`, where moving the cursor paints a range; `Enter` commits it and `Esc`
+cancels it, returning the cursor to where `v` was pressed. A committed range
+puts the wall in `SELECT`, where the cursor still moves freely and further
+ranges can be added or subtracted. A bar along the bottom shows the live mode
+and count.
+
+The range is a run of images in library order, not a rectangle on screen — so
+it means the same thing whatever the window width.
+
+| Key | Action |
+|-----|--------|
+| `v` | Paint a range that adds to the selection |
+| `x` | Paint a range that removes from it (needs a selection) |
+| `Enter` | Commit the painted range |
+| `Space` | Select or deselect the image under the cursor |
+| `Cmd+A` | Select every image |
+| `i` | Invert the selection |
+| `Esc` | Cancel the painted range, then clear the selection |
+
+The selection is remembered while you visit the single view, but never acted on
+from there: every single-view action applies to the current image alone. It is
+not written to disk.
 
 ## Development
 

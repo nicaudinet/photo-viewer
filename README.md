@@ -34,6 +34,13 @@ top of the selection machinery.
 
 Every action in the single view applies to the current image and nothing else.
 
+Rotation is lossless. A JPEG is turned by rewriting its EXIF orientation tag —
+the way a camera records which way up a photo was taken — so the compressed
+image is never decoded and re-encoded, and can be turned as often as you like
+without degrading. It is also instant, whatever the size of the photo. PNG has
+no such tag and is turned by its pixels, which costs nothing beyond the time,
+the format being lossless anyway.
+
 ### Wall view
 
 | Key | Action |

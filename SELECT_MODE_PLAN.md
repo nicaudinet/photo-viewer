@@ -247,9 +247,21 @@ The tag write is the easy half. The work is honouring orientation on read:
 - **`thumb_height` must keep matching `thumbnail` exactly** — the existing
   invariant (and its test) that stops the wall shifting when a decode lands.
   Orientation has to be applied identically on both sides.
-- **New dependency** for writing EXIF: `little_exif`, or `img-parts` plus
-  `kamadak-exif`. A JPEG with no EXIF at all needs an APP1 segment inserted, not
-  merely edited.
+- **Writing the tag.** Done in `src/exif.rs` with no new dependency, contrary to
+  the original sketch below. `little_exif` pulls six crates (brotli, quick-xml,
+  crc, …) and re-serialises the whole EXIF block to change two bytes. The risk
+  in editing EXIF is that moving bytes inside the TIFF block invalidates every
+  interior offset past the move — including ones inside a camera `MakerNote`,
+  which are not always self-describing. So `exif.rs` never moves an existing
+  byte:
+  - orientation already present: overwrite its two value bytes in place;
+  - EXIF present but no orientation tag: append a *copy* of IFD0 carrying the
+    new entry to the end of the TIFF block and repoint the header at it, leaving
+    the original as dead space;
+  - no EXIF at all: splice in a minimal APP1.
+
+  ~~New dependency for writing EXIF: `little_exif`, or `img-parts` plus
+  `kamadak-exif`.~~
 - **Trade-off**: applications that ignore EXIF orientation will show the old
   rotation. Nearly all modern ones honour it; a few command-line tools do not.
   The alternative — `turbojpeg`'s lossless DCT-block transform, which really

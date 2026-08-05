@@ -20,6 +20,7 @@
 //! `App` here owns only screen-independent state and the transitions between
 //! screens; each screen's own state, actions, and view live in `gui/`.
 
+mod exif;
 mod library;
 mod imaging;
 mod platform;

@@ -70,6 +70,23 @@ it means the same thing whatever the window width.
 | `i` | Invert the selection |
 | `Esc` | Cancel the painted range, then clear the selection |
 
+The mouse is modal in the same way. With nothing selected a plain click still
+opens the image; `Cmd`-click is the way into a selection without touching the
+keyboard. Once a selection is live, plain clicks select instead and opening
+moves to a double click.
+
+| Mouse | Action |
+|-------|--------|
+| click (nothing selected) | Open the image in single view |
+| click (selection live) | Select or deselect that image |
+| `Cmd`-click | Select or deselect, whatever the mode |
+| `Shift`-click | Select the run from the cursor to that image |
+| double click | Open the image, leaving the selection unchanged |
+| click (while painting) | Extend the painted range to that image |
+
+Every click moves the cursor to what it hit, so `v` after a click anchors where
+you are looking.
+
 The selection is remembered while you visit the single view, but never acted on
 from there: every single-view action applies to the current image alone. It is
 not written to disk.

@@ -6,7 +6,8 @@
 //! - Wall view: async 300px thumbnails laid out shortest-column masonry in a
 //!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
 //!   (scrolling it into view), Enter or a click to open it, `r`/`Shift+R` to
-//!   rotate it on disk.
+//!   rotate it on disk, and a modal selection (`v`/`x`/`Space`, or the mouse)
+//!   over groups of images.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
@@ -41,7 +42,7 @@ use iced::{Element, Size, Subscription, Task, Theme};
 use gui::empty::empty_view;
 use gui::help_overlay;
 use gui::single::{SingleMsg, SingleState};
-use gui::wall::{Dir, WallMsg, WallState};
+use gui::wall::{Click, Dir, WallMsg, WallState};
 use library::{load_library, Library, RangeOp, IMAGE_EXTENSIONS};
 
 pub fn main() -> iced::Result {
@@ -73,6 +74,10 @@ pub fn main() -> iced::Result {
 /// without one — `Empty` genuinely carries nothing. Toggling between views moves
 /// the library across; the losing view's decode caches are dropped (and re-built
 /// on return — a deliberate, revisitable trade-off).
+// The wall's state is the larger by some way, but exactly one `Screen` exists
+// for the life of the process — boxing it would buy an indirection on every
+// access and save nothing.
+#[allow(clippy::large_enum_variant)]
 enum Screen {
     Empty,
     Single(SingleState),
@@ -93,6 +98,13 @@ struct App {
     /// The window starts hidden (`visible: false`) and is revealed on its first
     /// rendered frame to avoid a white startup flash; this latches that reveal.
     revealed: bool,
+    /// Live modifier state, tracked from the keyboard subscription.
+    ///
+    /// A `button` reports only *that* it was pressed, so a click carrying
+    /// `Cmd` or `Shift` has to be read from here instead. Keyboard events are
+    /// the only source: if the window loses focus mid-chord this can go stale
+    /// until the next key event, which costs at most one mis-read click.
+    modifiers: keyboard::Modifiers,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +117,8 @@ enum Message {
     Escape,
     /// The first frame has rendered; reveal the (initially hidden) window.
     WindowReady,
+    /// A modifier key went down or up; remembered for the next click.
+    ModifiersChanged(keyboard::Modifiers),
 
     // Ambiguous shared keys: same key, different meaning per screen. The live
     // screen isn't visible to `subscription`, so these stay neutral here and are
@@ -156,6 +170,7 @@ impl App {
             help_open: false,
             fullscreen: false,
             revealed: false,
+            modifiers: keyboard::Modifiers::default(),
         };
         let task = match std::env::args().nth(1) {
             Some(arg) => app.open(PathBuf::from(arg)),
@@ -281,6 +296,10 @@ impl App {
                 };
                 iced::window::latest().and_then(move |id| iced::window::set_mode(id, mode))
             }
+            Message::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers;
+                Task::none()
+            }
             Message::WindowReady => {
                 if self.revealed {
                     return Task::none();
@@ -371,7 +390,16 @@ impl App {
                     None => Task::none(),
                 }
             }
-            Message::ThumbClicked(index) => self.open_index(index),
+            Message::ThumbClicked(index) => {
+                let modifiers = self.modifiers;
+                match &mut self.screen {
+                    Screen::Wall(w) => match w.click(index, modifiers) {
+                        Click::Open => self.open_index(index),
+                        Click::Handled(task) => task,
+                    },
+                    _ => Task::none(),
+                }
+            }
 
             // Screen-local: only acts when that screen is current.
             Message::Single(m) => match &mut self.screen {
@@ -389,6 +417,11 @@ impl App {
         // 0.14 unified keyboard subscriptions into a single `listen()` that
         // emits raw `keyboard::Event`s; filter for key-presses ourselves.
         let keys = keyboard::listen().filter_map(|event| {
+            // Clicks read their modifiers from `App::modifiers`, since a
+            // `button` press carries none of its own.
+            if let keyboard::Event::ModifiersChanged(modifiers) = event {
+                return Some(Message::ModifiersChanged(modifiers));
+            }
             let keyboard::Event::KeyPressed { key, modified_key, modifiers, .. } = event else {
                 return None;
             };

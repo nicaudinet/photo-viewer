@@ -3,8 +3,12 @@
 A keyboard-driven image viewer built with **Rust + [iced](https://iced.rs)**
 (Elm architecture). Built and deployed with Nix flakes.
 
-Rewritten from an earlier PySide6/Qt implementation — see
-[`RUST_REWRITE_PLAN.md`](RUST_REWRITE_PLAN.md) for the migration history.
+Rewritten from an earlier PySide6/Qt implementation.
+
+A modal selection mode — vim-style, for acting on groups of images at once — is
+being built; see [`SELECT_MODE_PLAN.md`](SELECT_MODE_PLAN.md). Its first step
+removed the old favourites and mark-to-delete features, which will return on
+top of the selection machinery.
 
 ## Keybindings
 
@@ -26,23 +30,23 @@ Rewritten from an earlier PySide6/Qt implementation — see
 | `→` / `l` | Next image (circular) |
 | `r` | Rotate anticlockwise 90° — writes the file to disk |
 | `Shift+R` | Rotate clockwise 90° — writes the file to disk |
-| `f` | Toggle favourite (un-favouriting also un-deletes) |
-| `Cmd+F` | Save favourites: copy every favourited file into a chosen dir |
-| `d` | Toggle mark-to-delete (refused if favourited) |
-| `Cmd+D` | Delete all marked — confirm, then unlink files from disk |
 | `w` | Switch to wall view |
+
+Every action in the single view applies to the current image and nothing else.
 
 ### Wall view
 
 | Key | Action |
 |-----|--------|
+| `←` / `h` | Move the selection left |
+| `→` / `l` | Move the selection right |
+| `↑` / `k` | Move the selection up a row |
+| `↓` / `j` | Move the selection down a row |
+| `Enter` | Open the selected image in single view |
+| `r` | Rotate the selected image anticlockwise 90° |
+| `Shift+R` | Rotate the selected image clockwise 90° |
 | `w` | Switch to single view |
-| `f` | Toggle "show only favourites" filter |
-| `d` | Toggle "show only to-delete" filter |
 | click | Go to that image in single view |
-
-Favourites and to-delete marks persist in a `.photo-viewer/` cache directory
-alongside the images (newline-separated absolute paths).
 
 ## Development
 

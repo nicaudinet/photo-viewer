@@ -1,9 +1,8 @@
-//! The wall view: async thumbnails laid out shortest-column masonry, with a
-//! favourites/to-delete visibility filter, keyboard navigation, rotate, and
-//! click-to-open.
+//! The wall view: async thumbnails laid out shortest-column masonry, with
+//! keyboard navigation, rotate, and click-to-open.
 //!
 //! Layout runs in two phases. [`WallState::layout`] is a pure function from
-//! (viewport width, thumbnail heights, filter) to a [`WallLayout`] — *where*
+//! (viewport width, thumbnail heights) to a [`WallLayout`] — *where*
 //! each thumbnail sits, as plain data. The view turns that into widgets;
 //! `update` reads it to answer "what is to the left of the current image?".
 //! Both derive from the same function over the same state, so keyboard
@@ -23,12 +22,11 @@ use iced::advanced::widget::operation::Outcome;
 use iced::advanced::widget::{operate, Id, Operation};
 use iced::theme::palette::lighten;
 use iced::widget::operation::{scroll_to, AbsoluteOffset};
-use iced::widget::{button, container, image, scrollable, text, Column, Row, Stack};
+use iced::widget::{button, container, image, scrollable, text, Column, Row};
 use iced::{
     Background, Border, Color, Element, Length, Rectangle, Shadow, Size, Task, Theme, Vector,
 };
 
-use super::corner_icon;
 use crate::library::Library;
 use crate::Message;
 
@@ -94,10 +92,6 @@ pub(crate) enum WallMsg {
     /// The wall scrolled; carries the absolute vertical offset in pixels so the
     /// scheduler can prioritise thumbnails near the viewport.
     Scrolled(f32),
-    /// `f`: filter to favourites only (or back to all).
-    FilterFavourites,
-    /// `d`: filter to to-delete only (or back to all).
-    FilterToDelete,
     /// Move the selection one thumbnail in `Dir`.
     Nav(Dir),
     /// `r` / `Shift+R`: rotate the selected image 90°, writing it to disk.
@@ -108,14 +102,6 @@ pub(crate) enum WallMsg {
         path: PathBuf,
         result: Result<(), String>,
     },
-}
-
-/// Wall-view visibility filter. Toggling one filter off returns to `All`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WallFilter {
-    All,
-    Favourites,
-    ToDelete,
 }
 
 /// A decoded thumbnail: the RGBA handle plus its scaled pixel size (needed for
@@ -138,17 +124,17 @@ struct Slot {
 struct WallLayout {
     /// Per column, the library indices it holds, top to bottom.
     columns: Vec<Vec<usize>>,
-    /// Library index -> where it sits. Only displayed images appear.
+    /// Library index -> where it sits.
     slots: HashMap<usize, Slot>,
-    /// Displayed library indices in library order — the space decode priority
-    /// is expressed in.
+    /// Library indices in library order — the space decode priority is
+    /// expressed in.
     order: Vec<usize>,
     /// Total scrollable content height, including the outer padding.
     content_height: f32,
 }
 
-/// Wall-view state: the library plus its thumbnail cache, measurements and
-/// visibility filter. Every field is written only by [`WallState::update`].
+/// Wall-view state: the library plus its thumbnail cache and measurements.
+/// Every field is written only by [`WallState::update`].
 pub(crate) struct WallState {
     pub(crate) library: Library,
     /// Decoded thumbnails, keyed by path. Decoded once per wall session.
@@ -177,7 +163,6 @@ pub(crate) struct WallState {
     /// Sticky vertical centre for runs of left/right moves, so `h` then `l`
     /// returns to where it started instead of drifting.
     desired_y: Option<f32>,
-    wall_filter: WallFilter,
 }
 
 impl WallState {
@@ -193,7 +178,6 @@ impl WallState {
             scroll_y: 0.0,
             focus: 0.0,
             desired_y: None,
-            wall_filter: WallFilter::All,
         }
     }
 
@@ -250,14 +234,6 @@ impl WallState {
                 // Reprioritise: the next freed slots go to the new viewport.
                 self.refocus();
                 self.schedule()
-            }
-            WallMsg::FilterFavourites => {
-                self.wall_filter = toggle_filter(self.wall_filter, WallFilter::Favourites);
-                self.after_filter_change()
-            }
-            WallMsg::FilterToDelete => {
-                self.wall_filter = toggle_filter(self.wall_filter, WallFilter::ToDelete);
-                self.after_filter_change()
             }
             WallMsg::Nav(dir) => self.navigate(dir),
             WallMsg::Rotate { clockwise } => self.rotate(clockwise),
@@ -401,40 +377,6 @@ impl WallState {
         scroll_to(WALL_ID, AbsoluteOffset { x: 0.0, y })
     }
 
-    /// A filter toggle can hide the selected image, which would leave
-    /// navigation with no anchor at all. Re-anchor, then re-prioritise.
-    fn after_filter_change(&mut self) -> Task<Message> {
-        self.ensure_current_displayed();
-        self.desired_y = None;
-        self.refocus();
-        let reveal = match self.viewport {
-            Some(viewport) => self.reveal(&self.layout(viewport.width)),
-            None => Task::none(),
-        };
-        Task::batch([reveal, self.schedule()])
-    }
-
-    /// Move the pointer to the nearest displayed image if the filter just hid
-    /// the one it was on.
-    fn ensure_current_displayed(&mut self) {
-        let current = self.library.paths.index();
-        let nearest = {
-            let paths: Vec<&PathBuf> = self.library.paths.iter().collect();
-            if paths.get(current).is_some_and(|p| self.is_displayed(p)) {
-                return;
-            }
-            paths
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| self.is_displayed(p))
-                .min_by_key(|(i, _)| i.abs_diff(current))
-                .map(|(i, _)| i)
-        };
-        if let Some(index) = nearest {
-            self.library.goto(index);
-        }
-    }
-
     /// Re-aim decode priority at whatever is now in the middle of the viewport.
     fn refocus(&mut self) {
         let Some(viewport) = self.viewport else {
@@ -458,11 +400,9 @@ impl WallState {
 
     /// Fill free decode slots with the highest-priority pending thumbnails.
     ///
-    /// Priority: displayed (unfiltered-out) thumbnails first, ordered by
-    /// distance from [`WallState::focus`], so what you're looking at decodes
-    /// soonest; then any filtered-out paths in library order, so every
-    /// thumbnail is still eventually decoded (ready if the filter is cleared).
-    /// Called on wall entry and whenever a slot frees or priorities shift.
+    /// Priority is distance from [`WallState::focus`], so what you're looking
+    /// at decodes soonest. Called on wall entry and whenever a slot frees or
+    /// priorities shift.
     pub(crate) fn schedule(&mut self) -> Task<Message> {
         let free = max_in_flight().saturating_sub(self.in_flight.len());
         if free == 0 {
@@ -473,16 +413,10 @@ impl WallState {
         // record them (borrows self mutably) — the scope ends the read borrow.
         let chosen: Vec<PathBuf> = {
             let paths: Vec<&PathBuf> = self.library.paths.iter().collect();
-            prioritise(
-                &paths,
-                |p| self.is_displayed(p),
-                |p| self.needs_decode(p),
-                self.focus,
-                free,
-            )
-            .into_iter()
-            .cloned()
-            .collect()
+            prioritise(&paths, |p| self.needs_decode(p), self.focus, free)
+                .into_iter()
+                .cloned()
+                .collect()
         };
 
         let tasks: Vec<Task<Message>> = chosen
@@ -509,15 +443,6 @@ impl WallState {
         !self.thumbs.contains_key(path) && !self.in_flight.contains(path)
     }
 
-    /// Whether `path` is shown under the active filter.
-    fn is_displayed(&self, path: &PathBuf) -> bool {
-        match self.wall_filter {
-            WallFilter::All => true,
-            WallFilter::Favourites => self.library.favourites.contains(path),
-            WallFilter::ToDelete => self.library.to_delete.contains(path),
-        }
-    }
-
     /// The height a thumbnail will occupy: its decoded height, else the
     /// header-derived one, else a square guess until either arrives.
     fn tile_height(&self, path: &PathBuf) -> f32 {
@@ -528,11 +453,11 @@ impl WallState {
             .unwrap_or(THUMB_WIDTH as f32)
     }
 
-    /// Place every displayed thumbnail into the shortest column, as data.
+    /// Place every thumbnail into the shortest column, as data.
     ///
-    /// Deterministic in (`width`, `thumbs`, `ratios`, `wall_filter`, library
-    /// order) — which is exactly why the view and `update` can call it
-    /// separately and still agree.
+    /// Deterministic in (`width`, `thumbs`, `ratios`, library order) — which is
+    /// exactly why the view and `update` can call it separately and still
+    /// agree.
     fn layout(&self, width: f32) -> WallLayout {
         // `n` tiles need `n * TILE_WIDTH + (n + 1) * WALL_SPACING` (spacing
         // between them, plus the equal outer padding) — hence the single
@@ -547,14 +472,7 @@ impl WallState {
         // within the scrollable's content rather than relative to the grid.
         let mut heights = vec![WALL_SPACING; col_count];
 
-        let displayed = self
-            .library
-            .paths
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| self.is_displayed(p));
-
-        for (index, path) in displayed {
+        for (index, path) in self.library.paths.iter().enumerate() {
             let col = heights
                 .iter()
                 .enumerate()
@@ -587,17 +505,11 @@ impl WallState {
         }
     }
 
-    pub(crate) fn view<'a>(
-        &'a self,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
+    pub(crate) fn view(&self) -> Element<'_, Message> {
         // The scrollable is rendered even before the first measurement, empty:
         // `measure` has to find it in the tree to report its size at all.
-        let grid: Element<'a, Message> = match self.viewport {
-            Some(viewport) => {
-                self.build_grid(&self.layout(viewport.width), star_icon, delete_icon)
-            }
+        let grid: Element<'_, Message> = match self.viewport {
+            Some(viewport) => self.build_grid(&self.layout(viewport.width)),
             None => Column::new().into(),
         };
 
@@ -613,12 +525,7 @@ impl WallState {
     }
 
     /// Turn a computed [`WallLayout`] into the column-of-thumbnails widget tree.
-    fn build_grid<'a>(
-        &'a self,
-        layout: &WallLayout,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
-    ) -> Element<'a, Message> {
+    fn build_grid<'a>(&'a self, layout: &WallLayout) -> Element<'a, Message> {
         let current = self.library.paths.index();
         let paths: Vec<&'a PathBuf> = self.library.paths.iter().collect();
 
@@ -630,7 +537,7 @@ impl WallState {
                     .iter()
                     .filter_map(|&index| {
                         let path = *paths.get(index)?;
-                        Some(self.thumb_element(index, path, current, star_icon, delete_icon))
+                        Some(self.thumb_element(index, path, current))
                     })
                     .collect();
                 Column::with_children(items)
@@ -643,16 +550,13 @@ impl WallState {
         Row::with_children(columns).spacing(WALL_SPACING).into()
     }
 
-    /// One thumbnail: image (or placeholder) + icon overlay, clickable, with a
-    /// highlight border when it is the current image. Icons are hidden while a
-    /// filter is active (the filter already conveys the status).
+    /// One thumbnail: image (or placeholder), clickable, with a highlight
+    /// border when it is the current image.
     fn thumb_element<'a>(
         &'a self,
         index: usize,
         path: &'a PathBuf,
         current: usize,
-        star_icon: &'a image::Handle,
-        delete_icon: &'a image::Handle,
     ) -> Element<'a, Message> {
         let inner: Element<'a, Message> = match self.thumbs.get(path) {
             Some(thumb) => image(thumb.handle.clone())
@@ -668,22 +572,8 @@ impl WallState {
                 .into(),
         };
 
-        let show_icons = self.wall_filter == WallFilter::All;
-        let icon = if show_icons && self.library.favourites.contains(path) {
-            Some(star_icon.clone())
-        } else if show_icons && self.library.to_delete.contains(path) {
-            Some(delete_icon.clone())
-        } else {
-            None
-        };
-
-        let body: Element<'a, Message> = match icon {
-            Some(handle) => Stack::with_children(vec![inner, corner_icon(handle)]).into(),
-            None => inner,
-        };
-
         let selected = index == current;
-        button(body)
+        button(inner)
             // Inset the content so the selection ring isn't drawn over it.
             .padding(SEL_BORDER)
             .on_press(Message::ThumbClicked(index))
@@ -799,49 +689,25 @@ fn nearest_position(layout: &WallLayout, y: f32) -> f32 {
 
 /// Order `paths` for decode and return the first `free`.
 ///
-/// `is_displayed` marks which paths the active filter shows; `pending` marks
-/// which still need decoding. Displayed + pending come first, nearest `focus`
-/// (a position in the displayed list); then filtered-out + pending in list
-/// order, so every thumbnail is still eventually decoded. Priority is by list
-/// position, not pixel height, so a decode landing never reshuffles it.
+/// `pending` marks which paths still need decoding; those are taken nearest
+/// `focus` (a position in the list) first. Priority is by list position, not
+/// pixel height, so a decode landing never reshuffles it. The sort is stable,
+/// so equal-distance items keep list order.
 fn prioritise<'a>(
     paths: &[&'a PathBuf],
-    is_displayed: impl Fn(&PathBuf) -> bool,
     pending: impl Fn(&PathBuf) -> bool,
     focus: f32,
     free: usize,
 ) -> Vec<&'a PathBuf> {
-    let displayed: Vec<&'a PathBuf> = paths.iter().copied().filter(|p| is_displayed(p)).collect();
-
-    // (tier, key): tier 0 = displayed (key = distance from focus), tier 1 =
-    // filtered-out (key = list index). Lower sorts first; sort is stable, so
-    // equal-distance items keep list order.
-    let mut candidates: Vec<(u8, f32, &'a PathBuf)> = Vec::new();
-    for (pos, p) in displayed.iter().copied().enumerate() {
-        if pending(p) {
-            candidates.push((0, (pos as f32 - focus).abs(), p));
-        }
-    }
-    for (i, p) in paths.iter().copied().enumerate() {
-        if !is_displayed(p) && pending(p) {
-            candidates.push((1, i as f32, p));
-        }
-    }
-    candidates.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then(a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal))
-    });
-    candidates.into_iter().take(free).map(|(_, _, p)| p).collect()
-}
-
-/// Toggle `filter` on: pressing its key again (when already active) returns to
-/// `All`, otherwise it becomes the sole active filter.
-fn toggle_filter(current: WallFilter, filter: WallFilter) -> WallFilter {
-    if current == filter {
-        WallFilter::All
-    } else {
-        filter
-    }
+    let mut candidates: Vec<(f32, &'a PathBuf)> = paths
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, p)| pending(p))
+        .map(|(pos, p)| ((pos as f32 - focus).abs(), p))
+        .collect();
+    candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+    candidates.into_iter().take(free).map(|(_, p)| p).collect()
 }
 
 fn thumb_button_style(theme: &Theme, selected: bool) -> button::Style {
@@ -879,7 +745,6 @@ fn placeholder_style(theme: &Theme) -> container::Style {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     fn paths(n: usize) -> Vec<PathBuf> {
         (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect()
@@ -892,12 +757,7 @@ mod tests {
         let files = paths(heights.len());
         let library = Library {
             paths: crate::pointed_list::PointedList::new(files.clone()).unwrap(),
-            favourites: HashSet::new(),
-            to_delete: HashSet::new(),
             image_dir: PathBuf::from("/wall"),
-            cache_dir: PathBuf::from("/wall/.cache"),
-            favourites_file: PathBuf::from("/wall/.cache/favourites"),
-            to_delete_file: PathBuf::from("/wall/.cache/to_delete"),
         };
         let mut state = WallState::new(library);
         state.ratios = files.into_iter().zip(heights.iter().copied()).collect();
@@ -1025,23 +885,6 @@ mod tests {
         // Now anchored on 1 (centre 212), not the stale 382, so left gives 0.
         let _ = state.update(WallMsg::Nav(Dir::Left));
         assert_eq!(state.library.paths.index(), 0);
-    }
-
-    #[test]
-    fn filtering_re_anchors_a_hidden_selection() {
-        let mut state = wall(&SPREAD, 3);
-        let files: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
-        state.library.favourites = [files[4].clone()].into_iter().collect();
-        let _ = state.update(WallMsg::Nav(Dir::Down)); // selection on 3
-        assert_eq!(state.library.paths.index(), 3);
-
-        // 3 isn't a favourite, so filtering would leave nav with no anchor.
-        let _ = state.update(WallMsg::FilterFavourites);
-        assert_eq!(state.library.paths.index(), 4);
-
-        // Clearing the filter leaves the pointer where it was re-anchored.
-        let _ = state.update(WallMsg::FilterFavourites);
-        assert_eq!(state.library.paths.index(), 4);
     }
 
     /// A 1x1 stand-in for a decoded thumbnail of the given height.
@@ -1189,7 +1032,7 @@ mod tests {
         let refs: Vec<&PathBuf> = paths.iter().collect();
         // Focused midway (4.5): 4 and 5 are closest (0.5 each), then 3 (1.5,
         // pushed before 6 so it wins the tie).
-        let chosen = prioritise(&refs, |_| true, |_| true, 4.5, 3);
+        let chosen = prioritise(&refs, |_| true, 4.5, 3);
         assert_eq!(chosen, vec![&paths[4], &paths[5], &paths[3]]);
     }
 
@@ -1197,7 +1040,7 @@ mod tests {
     fn decodes_top_down_from_the_top() {
         let paths = paths(6);
         let refs: Vec<&PathBuf> = paths.iter().collect();
-        let chosen = prioritise(&refs, |_| true, |_| true, 0.0, 3);
+        let chosen = prioritise(&refs, |_| true, 0.0, 3);
         assert_eq!(chosen, vec![&paths[0], &paths[1], &paths[2]]);
     }
 
@@ -1206,31 +1049,15 @@ mod tests {
         let paths = paths(6);
         let refs: Vec<&PathBuf> = paths.iter().collect();
         // 0 already done: from the top, the next two pending are 1 and 2.
-        let chosen = prioritise(&refs, |_| true, |p| p != &paths[0], 0.0, 2);
+        let chosen = prioritise(&refs, |p| p != &paths[0], 0.0, 2);
         assert_eq!(chosen, vec![&paths[1], &paths[2]]);
-    }
-
-    #[test]
-    fn displayed_first_then_filtered_out() {
-        let paths = paths(6);
-        let refs: Vec<&PathBuf> = paths.iter().collect();
-        let shown: HashSet<PathBuf> = [0, 2, 4].iter().map(|i| paths[*i].clone()).collect();
-        // Displayed evens come first (by distance from the top), then the
-        // filtered-out odds in list order — everything still gets decoded.
-        let chosen = prioritise(&refs, |p| shown.contains(p), |_| true, 0.0, 6);
-        assert_eq!(
-            chosen,
-            vec![
-                &paths[0], &paths[2], &paths[4], &paths[1], &paths[3], &paths[5]
-            ]
-        );
     }
 
     #[test]
     fn free_zero_yields_nothing() {
         let paths = paths(4);
         let refs: Vec<&PathBuf> = paths.iter().collect();
-        let chosen = prioritise(&refs, |_| true, |_| true, 0.0, 0);
+        let chosen = prioritise(&refs, |_| true, 0.0, 0);
         assert!(chosen.is_empty());
     }
 }

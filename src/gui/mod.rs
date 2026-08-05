@@ -25,18 +25,17 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
     ("o", "Open file"),
-    ("f", "Favourite / favourites filter"),
-    ("\u{2318}F", "Save favourites"),
-    ("d", "Mark to delete / to-delete filter"),
-    ("\u{2318}D", "Delete all marked"),
     ("e", "Fullscreen (toggle)"),
     ("?", "Show help (toggle)"),
     ("Esc", "Close help"),
     ("q", "Quit"),
 ];
 
-/// An icon pinned to the top-right corner with a fixed margin. Shared by the
-/// single and wall views.
+/// An icon pinned to the top-right corner with a fixed margin.
+///
+/// Unused since the favourite/delete overlays were removed; kept for the
+/// selection badge in phase 1 of `SELECT_MODE_PLAN.md`.
+#[allow(dead_code)]
 pub(crate) fn corner_icon(handle: image::Handle) -> Element<'static, Message> {
     container(
         image(handle)
@@ -51,7 +50,7 @@ pub(crate) fn corner_icon(handle: image::Handle) -> Element<'static, Message> {
     .into()
 }
 
-/// Shared translucent-panel styling for the help and confirm overlays.
+/// Shared translucent-panel styling for the overlays.
 fn overlay_box(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
@@ -84,27 +83,6 @@ pub(crate) fn help_overlay() -> Element<'static, Message> {
         container(column![title, rows].spacing(18))
             .padding(28)
             .style(overlay_box),
-    )
-    .into()
-}
-
-pub(crate) fn confirm_overlay(count: usize) -> Element<'static, Message> {
-    let message = if count == 1 {
-        "Delete 1 photo?".to_string()
-    } else {
-        format!("Delete {count} photos?")
-    };
-    center(
-        container(
-            column![
-                text(message).size(22),
-                text("y / Enter — yes      n / Esc — no").size(14),
-            ]
-            .spacing(18)
-            .align_x(Horizontal::Center),
-        )
-        .padding(28)
-        .style(overlay_box),
     )
     .into()
 }

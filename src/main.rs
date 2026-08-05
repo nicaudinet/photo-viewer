@@ -1,27 +1,29 @@
 //! PhotoViewer — Rust + iced rewrite.
 //!
-//! Phase 5: rotate, open-dir picker, and the empty view.
 //! - Single view: fit-to-window decode, `←/→ h/l` nav, `r`/`Shift+R` rotate
-//!   (writes the file to disk), `f`/`d` favourite/delete toggles + icon
-//!   overlays, `Cmd+D` delete-all (confirm overlay), `Cmd+F` save-favourites.
+//!   (writes the file to disk). Every action applies to the current image and
+//!   nothing else.
 //! - Wall view: async 300px thumbnails laid out shortest-column masonry in a
 //!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
 //!   (scrolling it into view), Enter or a click to open it, `r`/`Shift+R` to
-//!   rotate it on disk, `f`/`d` filter to favourites/to-delete only.
+//!   rotate it on disk.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
-//!   help. Roadmap in `RUST_REWRITE_PLAN.md`.
+//!   help.
+//!
+//! Favourites and mark-to-delete were removed in phase 0 of
+//! `SELECT_MODE_PLAN.md`; selection, and the batch operations that replace
+//! them, land in the phases after it.
 //!
 //! `App` here owns only screen-independent state and the transitions between
 //! screens; each screen's own state, actions, and view live in `gui/`.
 
-// Pure domain core (Phase 1). Later phases consume more of its API; allow the
-// still-unused surface for now.
-#[allow(dead_code)]
 mod library;
 mod imaging;
 mod platform;
+// `PointedList` keeps a complete list API (`delete`, `contains`, …) that the
+// selection phases will consume; allow the still-unused surface for now.
 #[allow(dead_code)]
 mod pointed_list;
 
@@ -32,19 +34,15 @@ use std::time::Duration;
 
 use iced::keyboard;
 use iced::keyboard::key::Named;
-use iced::widget::{image, Stack};
+use iced::widget::Stack;
 use iced::window::Mode;
 use iced::{Element, Size, Subscription, Task, Theme};
 
 use gui::empty::empty_view;
+use gui::help_overlay;
 use gui::single::{SingleMsg, SingleState};
 use gui::wall::{Dir, WallMsg, WallState};
-use gui::{confirm_overlay, help_overlay};
 use library::{load_library, Library, IMAGE_EXTENSIONS};
-
-/// Star/delete overlay icons, baked into the binary (no runtime path lookup).
-const STAR_ICON: &[u8] = include_bytes!("../icons/star.png");
-const DELETE_ICON: &[u8] = include_bytes!("../icons/delete.png");
 
 pub fn main() -> iced::Result {
     // Register the macOS open-file handler before the event loop starts, so a
@@ -95,8 +93,6 @@ struct App {
     /// The window starts hidden (`visible: false`) and is revealed on its first
     /// rendered frame to avoid a white startup flash; this latches that reveal.
     revealed: bool,
-    star_icon: image::Handle,
-    delete_icon: image::Handle,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +101,7 @@ enum Message {
     Quit,
     ToggleFullscreen,
     ToggleHelp,
-    /// Esc: cancel the confirm overlay if open, else close help.
+    /// Esc: close the help overlay.
     Escape,
     /// The first frame has rendered; reveal the (initially hidden) window.
     WindowReady,
@@ -113,16 +109,12 @@ enum Message {
     // Ambiguous shared keys: same key, different meaning per screen. The live
     // screen isn't visible to `subscription`, so these stay neutral here and are
     // dispatched to the current screen's update in `App::update`.
-    /// `f`: favourite toggle (single) or favourites filter (wall).
-    KeyF,
-    /// `d`: delete toggle (single) or to-delete filter (wall).
-    KeyD,
     /// Arrows / `hjkl`: previous-next (single) or grid movement (wall).
     Nav(Dir),
     /// `r` / `Shift+R`: rotate the current image (single) or the selected
     /// thumbnail (wall). Both write the file to disk.
     Rotate { clockwise: bool },
-    /// Enter: confirm a pending delete (single) or open the selection (wall).
+    /// Enter: open the selected thumbnail (wall only).
     Activate,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it
@@ -138,9 +130,6 @@ enum Message {
     /// Timer tick: drain any paths the platform delivered (macOS "Open With").
     PollOpenFiles,
     ThumbClicked(usize),
-    DeleteAll,
-    ConfirmYes,
-    ConfirmNo,
 
     // Delegated to the current screen's own update.
     Single(SingleMsg),
@@ -155,8 +144,6 @@ impl App {
             help_open: false,
             fullscreen: false,
             revealed: false,
-            star_icon: image::Handle::from_bytes(STAR_ICON.to_vec()),
-            delete_icon: image::Handle::from_bytes(DELETE_ICON.to_vec()),
         };
         let task = match std::env::args().nth(1) {
             Some(arg) => app.open(PathBuf::from(arg)),
@@ -227,43 +214,6 @@ impl App {
         }
     }
 
-    /// Accept a pending delete confirmation, if one is open.
-    fn confirm_yes(&mut self) -> Task<Message> {
-        let confirmed = if let Screen::Single(s) = &mut self.screen {
-            s.confirm_delete.take().is_some()
-        } else {
-            false
-        };
-        if confirmed {
-            self.do_delete_all()
-        } else {
-            Task::none()
-        }
-    }
-
-    /// Unlink every marked file, then re-decode the new current — or fall back
-    /// to the empty view if the whole library was deleted.
-    fn do_delete_all(&mut self) -> Task<Message> {
-        let empty = {
-            let Screen::Single(s) = &mut self.screen else {
-                return Task::none();
-            };
-            if let Err(e) = s.library.delete_all() {
-                eprintln!("Delete-all failed: {e}");
-            }
-            s.library.paths.is_empty()
-        };
-        if empty {
-            self.screen = Screen::Empty;
-            Task::none()
-        } else {
-            match &self.screen {
-                Screen::Single(s) => s.decode_current(&mut self.generation),
-                _ => Task::none(),
-            }
-        }
-    }
-
     /// The current library, whichever loaded view holds it.
     fn library(&self) -> Option<&Library> {
         match &self.screen {
@@ -281,22 +231,6 @@ impl App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
-        // While the confirm overlay is up it's modal: swallow everything but
-        // the confirm/cancel/quit keys.
-        let confirming = matches!(&self.screen, Screen::Single(s) if s.confirm_delete.is_some());
-        if confirming
-            && !matches!(
-                message,
-                Message::ConfirmYes
-                    | Message::ConfirmNo
-                    | Message::Activate
-                    | Message::Escape
-                    | Message::Quit
-            )
-        {
-            return Task::none();
-        }
-
         match message {
             Message::Quit => iced::exit(),
             Message::ToggleHelp => {
@@ -304,11 +238,6 @@ impl App {
                 Task::none()
             }
             Message::Escape => {
-                if let Screen::Single(s) = &mut self.screen {
-                    if s.confirm_delete.take().is_some() {
-                        return Task::none();
-                    }
-                }
                 self.help_open = false;
                 Task::none()
             }
@@ -330,16 +259,6 @@ impl App {
             }
 
             // Shared keys: disambiguate by screen, then hand to that screen.
-            Message::KeyF => match &mut self.screen {
-                Screen::Single(s) => s.update(SingleMsg::ToggleFavourite, &mut self.generation),
-                Screen::Wall(w) => w.update(WallMsg::FilterFavourites),
-                Screen::Empty => Task::none(),
-            },
-            Message::KeyD => match &mut self.screen {
-                Screen::Single(s) => s.update(SingleMsg::ToggleDelete, &mut self.generation),
-                Screen::Wall(w) => w.update(WallMsg::FilterToDelete),
-                Screen::Empty => Task::none(),
-            },
             Message::Nav(dir) => match &mut self.screen {
                 // The single view is a flat sequence: only left/right mean
                 // anything there.
@@ -363,14 +282,14 @@ impl App {
                 Screen::Wall(w) => w.update(WallMsg::Rotate { clockwise }),
                 Screen::Empty => Task::none(),
             },
+            // In the wall, Enter opens whatever the ring is around; it means
+            // nothing on the other screens.
             Message::Activate => match &self.screen {
-                // In the wall, Enter opens whatever the ring is around.
                 Screen::Wall(w) => {
                     let index = w.library.paths.index();
                     self.open_index(index)
                 }
-                // Elsewhere it only means "yes" to the confirm overlay.
-                _ => self.confirm_yes(),
+                _ => Task::none(),
             },
             Message::WallMeasure => match &self.screen {
                 Screen::Wall(_) => gui::wall::measure(),
@@ -415,22 +334,6 @@ impl App {
                 }
             }
             Message::ThumbClicked(index) => self.open_index(index),
-            Message::DeleteAll => {
-                if let Screen::Single(s) = &mut self.screen {
-                    let count = s.library.to_delete.len();
-                    if count > 0 {
-                        s.confirm_delete = Some(count);
-                    }
-                }
-                Task::none()
-            }
-            Message::ConfirmYes => self.confirm_yes(),
-            Message::ConfirmNo => {
-                if let Screen::Single(s) = &mut self.screen {
-                    s.confirm_delete = None;
-                }
-                Task::none()
-            }
 
             // Screen-local: only acts when that screen is current.
             Message::Single(m) => match &mut self.screen {
@@ -451,7 +354,6 @@ impl App {
             let keyboard::Event::KeyPressed { key, modified_key, modifiers, .. } = event else {
                 return None;
             };
-            let cmd = modifiers.command();
             match key.as_ref() {
                 keyboard::Key::Named(Named::ArrowRight) => Some(Message::Nav(Dir::Right)),
                 keyboard::Key::Named(Named::ArrowLeft) => Some(Message::Nav(Dir::Left)),
@@ -477,12 +379,6 @@ impl App {
                 _ if modified_key.as_ref() == keyboard::Key::Character("?") => {
                     Some(Message::ToggleHelp)
                 }
-                keyboard::Key::Character("f") if cmd => Some(Message::Single(SingleMsg::SaveFavourites)),
-                keyboard::Key::Character("f") => Some(Message::KeyF),
-                keyboard::Key::Character("d") if cmd => Some(Message::DeleteAll),
-                keyboard::Key::Character("d") => Some(Message::KeyD),
-                keyboard::Key::Character("y") => Some(Message::ConfirmYes),
-                keyboard::Key::Character("n") => Some(Message::ConfirmNo),
                 _ => None,
             }
         });
@@ -509,24 +405,14 @@ impl App {
     fn view(&self) -> Element<'_, Message> {
         let content: Element<'_, Message> = match &self.screen {
             Screen::Empty => empty_view(),
-            Screen::Single(s) => s.view(&self.star_icon, &self.delete_icon),
-            Screen::Wall(w) => w.view(&self.star_icon, &self.delete_icon),
+            Screen::Single(s) => s.view(),
+            Screen::Wall(w) => w.view(),
         };
 
-        let mut layers: Vec<Element<'_, Message>> = vec![content];
         if self.help_open {
-            layers.push(help_overlay());
-        }
-        if let Screen::Single(s) = &self.screen {
-            if let Some(count) = s.confirm_delete {
-                layers.push(confirm_overlay(count));
-            }
-        }
-
-        if layers.len() == 1 {
-            layers.pop().unwrap()
+            Stack::with_children(vec![content, help_overlay()]).into()
         } else {
-            Stack::with_children(layers).into()
+            content
         }
     }
 }

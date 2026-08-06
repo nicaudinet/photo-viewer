@@ -7,16 +7,17 @@
 //!   vertical scroll, current image ringed, `←/→/↑/↓ hjkl` to move the ring
 //!   (scrolling it into view), Enter or a click to open it, `r`/`Shift+R` to
 //!   rotate it on disk, and a modal selection (`v`/`x`/`Space`, or the mouse)
-//!   over groups of images, which can then be rotated, sent to another folder
-//!   (`m`/`c`) or trashed (`d`) all at once.
+//!   over groups of images, which can then be rotated, favourited (`f`), sent
+//!   to another folder (`m`/`c`) or trashed (`d`) all at once. `Shift+F` narrows
+//!   the wall to the favourites.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
 //! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
 //!   help.
 //!
-//! Favourites and mark-to-delete were removed in phase 0 of
-//! `SELECT_MODE_PLAN.md`; selection, and the batch operations that replace
-//! them, land in the phases after it.
+//! Favourites are a tag over a selection (`src/tags.rs`); mark-to-delete is
+//! gone for good, since `d` trashes a selection outright. See
+//! `SELECT_MODE_PLAN.md`.
 //!
 //! `App` here owns only screen-independent state and the transitions between
 //! screens; each screen's own state, actions, and view live in `gui/`.
@@ -29,6 +30,7 @@ mod platform;
 // selection phases will consume; allow the still-unused surface for now.
 #[allow(dead_code)]
 mod pointed_list;
+mod tags;
 mod transfer;
 
 mod gui;
@@ -220,6 +222,12 @@ enum Message {
     SelectAll,
     /// `i`.
     InvertSelection,
+    /// `f`: favourite the selection (wall) or the current image (single).
+    ToggleFavourite,
+    /// `Shift+F`: show only the favourites, or show everything again.
+    ToggleFilter,
+    /// The tag store was written. Only ever reported when it wasn't.
+    TagsSaved(Result<(), String>),
     /// `d`: ask before trashing the selection.
     DeleteSelected,
     /// `m` / `c`: send the selection to another folder. Opens the folder picker
@@ -659,6 +667,21 @@ impl App {
                 _ => Task::none(),
             },
 
+            // The one selection key the single view answers to as well — and
+            // there it applies to the current image alone, like everything on
+            // that screen.
+            Message::ToggleFavourite => match &mut self.screen {
+                Screen::Single(s) => s.update(SingleMsg::ToggleFavourite, &mut self.generation),
+                Screen::Wall(w) => w.update(WallMsg::ToggleFavourite),
+                Screen::Empty => Task::none(),
+            },
+            Message::ToggleFilter => self.wall_msg(WallMsg::ToggleFilter),
+            Message::TagsSaved(Ok(())) => Task::none(),
+            Message::TagsSaved(Err(e)) => {
+                eprintln!("Could not save tags: {e}");
+                Task::none()
+            }
+
             Message::Visual { op } => self.wall_msg(WallMsg::EnterVisual { op }),
             Message::ToggleSelected => self.wall_msg(WallMsg::ToggleCursor),
             Message::SelectAll => self.wall_msg(WallMsg::SelectAll),
@@ -922,6 +945,9 @@ fn normal_key(event: keyboard::Event) -> Option<Message> {
         keyboard::Key::Character("c") => Some(Message::Transfer {
             kind: TransferKind::Copy,
         }),
+        keyboard::Key::Character("F") => Some(Message::ToggleFilter),
+        keyboard::Key::Character("f") if modifiers.shift() => Some(Message::ToggleFilter),
+        keyboard::Key::Character("f") => Some(Message::ToggleFavourite),
         keyboard::Key::Character("a") if modifiers.command() => Some(Message::SelectAll),
         keyboard::Key::Character("q") => Some(Message::Quit),
         keyboard::Key::Character("e") => Some(Message::ToggleFullscreen),

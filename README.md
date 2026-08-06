@@ -5,10 +5,10 @@ A keyboard-driven image viewer built with **Rust + [iced](https://iced.rs)**
 
 Rewritten from an earlier PySide6/Qt implementation.
 
-A modal selection mode — vim-style, for acting on groups of images at once — is
-being built; see [`SELECT_MODE_PLAN.md`](SELECT_MODE_PLAN.md). Its first step
-removed the old favourites and mark-to-delete features, which will return on
-top of the selection machinery.
+Selection is modal and vim-shaped: a cursor moves over a wall of thumbnails,
+`v` paints a range, and whatever is selected can be rotated, favourited, sent
+to another folder or trashed in one go. See
+[`SELECT_MODE_PLAN.md`](SELECT_MODE_PLAN.md) for the design and its reasoning.
 
 ## Keybindings
 
@@ -30,6 +30,7 @@ top of the selection machinery.
 | `→` / `l` | Next image (circular) |
 | `r` | Rotate anticlockwise 90° — writes the file to disk |
 | `Shift+R` | Rotate clockwise 90° — writes the file to disk |
+| `f` | Favourite this image |
 | `w` | Switch to wall view |
 
 Every action in the single view applies to the current image and nothing else.
@@ -52,6 +53,8 @@ the format being lossless anyway.
 | `Enter` | Commit a painted range, else open the image in single view |
 | `r` | Rotate the selected image anticlockwise 90° |
 | `Shift+R` | Rotate the selected image clockwise 90° |
+| `f` | Favourite the image under the cursor |
+| `Shift+F` | Show only the favourites, or show everything again |
 | `w` | Switch to single view |
 | click | Go to that image in single view |
 
@@ -84,6 +87,7 @@ Every operation applies to each selected image independently.
 | Key | Action |
 |-----|--------|
 | `r` / `Shift+R` | Rotate every selected image |
+| `f` | Favourite every selected image |
 | `m` | Move every selected image to another folder |
 | `c` | Copy every selected image to another folder |
 | `d` | Move every selected image to the trash (asks first) |
@@ -142,6 +146,39 @@ you are looking.
 The selection is remembered while you visit the single view, but never acted on
 from there: every single-view action applies to the current image alone. It is
 not written to disk.
+
+#### Favourites
+
+`f` favourites the whole selection, or — with nothing selected — just the image
+under the cursor. Toggling a group makes the group agree: it favourites them
+unless they all already are, in which case it takes the mark off all of them.
+Favourites carry a star in the top-left corner of the thumbnail, opposite the
+selection tick, so a photo that is both shows both.
+
+`Shift+F` narrows the wall to the favourites and back. While it is narrowed a
+bar along the bottom says so and how many of the folder you are looking at.
+
+Filtering is refused while anything is selected. A filter that hid a selected
+photo would put images you cannot see into the next batch — `Esc` clears the
+selection in one key. Underneath, the filter narrows the list that the cursor
+and the selection are expressed in, so a hidden photo has no index anything can
+name; anything that drops off the wall drops out of the selection with it.
+
+Favouriting the last one and then un-favouriting it puts the whole folder back
+rather than leaving you looking at nothing, and asking to filter when nothing is
+favourited does nothing at all — a blank wall would claim the folder was empty.
+
+The narrowing follows you into the single view, so opening a favourite and then
+pressing `l` walks the favourites rather than the whole folder. Favouriting from
+that screen still touches only the photo on it, and never drops it out from
+under you — the wall works out what to show on the way back.
+
+Favourites are stored as `<folder>/.photo-viewer/tags/favourite`, a list of file
+names — not full paths, so renaming or moving the folder keeps them attached to
+the photos. It is written as soon as anything changes; there is no save key. The
+format is a general tag store with one file per tag, though only `favourite` has
+a key so far. A `favourites` file from the older versions of this app is read
+once and carried over.
 
 ## Development
 

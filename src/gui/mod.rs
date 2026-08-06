@@ -6,13 +6,12 @@ pub mod empty;
 pub mod single;
 pub mod wall;
 
-use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{center, column, container, image, row, text};
+use iced::alignment::Horizontal;
+use iced::widget::{center, column, container, row, text};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::Message;
 
-const ICON_SIZE: f32 = 40.0;
 pub(crate) const ICON_MARGIN: f32 = 10.0;
 
 /// Shown in the help overlay, in press-order.
@@ -30,6 +29,8 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Space", "Wall: select / deselect one"),
     ("\u{2318}A", "Wall: select all"),
     ("i", "Wall: invert selection"),
+    ("f", "Favourite (selection, or one)"),
+    ("\u{21e7}F", "Wall: show only favourites"),
     ("m", "Wall: move the selection"),
     ("c", "Wall: copy the selection"),
     ("d", "Wall: trash the selection"),
@@ -38,25 +39,6 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Esc", "Help, then range, then selection"),
     ("q", "Quit"),
 ];
-
-/// An icon pinned to the top-right corner with a fixed margin.
-///
-/// Unused since the favourite/delete overlays were removed; kept for the
-/// selection badge in phase 1 of `SELECT_MODE_PLAN.md`.
-#[allow(dead_code)]
-pub(crate) fn corner_icon(handle: image::Handle) -> Element<'static, Message> {
-    container(
-        image(handle)
-            .width(Length::Fixed(ICON_SIZE))
-            .height(Length::Fixed(ICON_SIZE)),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_x(Horizontal::Right)
-    .align_y(Vertical::Top)
-    .padding(ICON_MARGIN)
-    .into()
-}
 
 /// Shared translucent-panel styling for the overlays.
 fn overlay_box(theme: &Theme) -> container::Style {

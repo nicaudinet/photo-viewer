@@ -1,11 +1,11 @@
-//! The GUI-free domain core: the image collection for one open directory, plus
-//! the user's selection within it.
+//! The GUI-free domain core: the image collection for one open directory, the
+//! user's selection within it, and the tags over it.
 //!
-//! Favourites and mark-to-delete used to live here, along with their
-//! `<image_dir>/.photo-viewer/` cache. Both were removed (see
-//! `SELECT_MODE_PLAN.md` phase 0) — they come back in phase 6 on top of the
-//! selection machinery. Any `.photo-viewer/` directories left on disk are inert
-//! and deliberately not cleaned up: phase 6 will want to read them.
+//! Favourites used to be a hard-coded set here with a cache file of its own.
+//! It is now one tag among however many (see [`crate::tags`]) applied to a
+//! selection, and the filter that shows only tagged images narrows `paths`
+//! rather than narrowing where thumbnails are drawn — see
+//! `SELECT_MODE_PLAN.md` phase 6 for why that difference matters.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::pointed_list::PointedList;
+use crate::tags::{self, Tags};
 
 /// Extensions we treat as images (compared case-insensitively, without the dot).
 pub const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
@@ -54,6 +55,16 @@ impl From<std::io::Error> for LibraryError {
 /// The full mutable domain state for one open directory.
 #[derive(Debug, Clone)]
 pub struct Library {
+    /// Every image in the directory, in scan order.
+    pub all: Vec<PathBuf>,
+    /// The images on screen: `all`, or the subset carrying [`Library::filter`].
+    ///
+    /// A filter narrows *this list* rather than being applied where images are
+    /// drawn. That is the whole of why a filter cannot hide a selected photo:
+    /// there is no list in which a hidden image can be reached, so nothing —
+    /// not `Cmd+A`, not a painted range, not a batch — can act on one. The
+    /// alternative, filtering at the point of drawing, leaves every one of
+    /// those free to touch images the user cannot see.
     pub paths: PointedList<PathBuf>,
     /// The directory `paths` was scanned from. The move/copy picker opens here,
     /// and it is what tells a destination inside the library from one outside.
@@ -66,6 +77,11 @@ pub struct Library {
     /// about the photos. It lives here rather than in the wall so that it
     /// survives a switch to the single view and back.
     pub selection: HashSet<PathBuf>,
+    /// The user's tags over these images, as loaded from — and written back to
+    /// — `<image_dir>/.photo-viewer/tags/`.
+    pub tags: Tags,
+    /// The tag `paths` is narrowed to, if any.
+    pub filter: Option<String>,
 }
 
 impl Library {
@@ -144,46 +160,134 @@ impl Library {
         self.selection.clear();
     }
 
+    // --- Tags ---
+
+    pub fn is_tagged(&self, tag: &str, path: &Path) -> bool {
+        self.tags.get(tag).is_some_and(|set| set.contains(path))
+    }
+
+    /// Add `tag` to every path in `paths`, or take it off all of them if they
+    /// all carry it already.
+    ///
+    /// Toggling a group means the group ends up agreeing, which is the only
+    /// reading that stays useful: with per-image toggling, one keypress over a
+    /// mixed selection would invert it into a differently-mixed one and the
+    /// user would have to work out what happened.
+    ///
+    /// Returns whether they are tagged now.
+    pub fn toggle_tag(&mut self, tag: &str, paths: &[PathBuf]) -> bool {
+        let adding = !paths.iter().all(|p| self.is_tagged(tag, p));
+        if adding {
+            let set = self.tags.entry(tag.to_string()).or_default();
+            set.extend(paths.iter().cloned());
+        } else if let Some(set) = self.tags.get_mut(tag) {
+            set.retain(|p| !paths.contains(p));
+            if set.is_empty() {
+                self.tags.remove(tag);
+            }
+        }
+        adding
+    }
+
+    // --- Filtering ---
+
+    /// Whether `path` is one the current filter shows.
+    fn shows(&self, path: &Path) -> bool {
+        match &self.filter {
+            None => true,
+            Some(tag) => self.is_tagged(tag, path),
+        }
+    }
+
+    /// Narrow the visible list to images carrying `tag`, or widen it to all of
+    /// them with `None`.
+    ///
+    /// Returns `false` — changing nothing — if no image carries the tag. An
+    /// empty wall would say "there are no photos here", which is a lie about a
+    /// folder that is merely unfiltered-full.
+    pub fn set_filter(&mut self, tag: Option<String>) -> bool {
+        let previous = std::mem::replace(&mut self.filter, tag);
+        if self.relist() {
+            return true;
+        }
+        self.filter = previous;
+        self.relist();
+        false
+    }
+
+    /// Re-apply the filter after the tags changed under it, dropping it if it
+    /// no longer matches anything.
+    ///
+    /// Un-favouriting the last favourite while looking at the favourites is not
+    /// an error and must not empty the screen: the photos are all still there,
+    /// so the honest thing is to show them again.
+    pub fn refilter(&mut self) -> bool {
+        if self.relist() {
+            return true;
+        }
+        self.filter = None;
+        self.relist();
+        false
+    }
+
+    /// Rebuild `paths` from `all` and the filter, keeping the cursor where it
+    /// can and landing it near where it was when it cannot.
+    ///
+    /// `false` if that leaves nothing — `PointedList` cannot be empty, so every
+    /// caller has to decide what to do about it.
+    fn relist(&mut self) -> bool {
+        let current = self.paths.current().clone();
+        let was = self.paths.index();
+        let previous: Vec<PathBuf> = self.paths.iter().cloned().collect();
+
+        let kept: Vec<PathBuf> = self.all.iter().filter(|p| self.shows(p)).cloned().collect();
+        let Some(mut paths) = PointedList::new(kept) else {
+            return false;
+        };
+
+        if paths.contains(&current) {
+            paths.goto_value(&current);
+        } else {
+            // Gone from view. Take the nearest of where it used to sit, by
+            // *old* position rather than by wrapping the way navigation does:
+            // after a run disappears, the eye is where the run was.
+            let landing = previous
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| paths.contains(p))
+                .min_by_key(|(i, _)| i.abs_diff(was))
+                .and_then(|(_, p)| paths.iter().position(|q| q == p))
+                .unwrap_or(0);
+            paths.goto(landing);
+        }
+        // The selection holds only what is on screen. Un-favouriting a selected
+        // photo while looking at the favourites takes it off the wall, and a
+        // selection reaching past the wall is the one thing filtering must
+        // never allow: it would put images the user cannot see into the next
+        // batch.
+        self.selection.retain(|p| paths.contains(p));
+        self.paths = paths;
+        true
+    }
+
     // --- Removal ---
 
     /// Drop `gone` from the library, landing the cursor on the surviving image
     /// nearest to where it was.
     ///
-    /// Nearest by *old* position, not by wrapping the way the cursor does when
-    /// it navigates: after deleting a run, the eye is where the run was, so
-    /// that is where the cursor belongs. Anything removed is dropped from the
-    /// selection too.
+    /// Anything removed is dropped from the selection and from every tag too: a
+    /// photo that is not there cannot be a favourite.
     ///
     /// Returns `false` if nothing is left, at which point the caller has no
     /// library to show — `PointedList` cannot be empty.
     pub fn remove(&mut self, gone: &HashSet<PathBuf>) -> bool {
-        let was = self.paths.index();
-        let survivors: Vec<(usize, PathBuf)> = self
-            .paths
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| !gone.contains(*p))
-            .map(|(i, p)| (i, p.clone()))
-            .collect();
-
-        let landing = survivors
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, (old, _))| old.abs_diff(was))
-            .map(|(new, _)| new)
-            .unwrap_or(0);
-
-        let kept: Vec<PathBuf> = survivors.into_iter().map(|(_, p)| p).collect();
+        self.all.retain(|p| !gone.contains(p));
         self.selection.retain(|p| !gone.contains(p));
-
-        match PointedList::new(kept) {
-            Some(mut paths) => {
-                paths.goto(landing);
-                self.paths = paths;
-                true
-            }
-            None => false,
+        for paths in self.tags.values_mut() {
+            paths.retain(|p| !gone.contains(p));
         }
+        self.tags.retain(|_, paths| !paths.is_empty());
+        self.relist()
     }
 }
 
@@ -215,13 +319,19 @@ pub fn load_library(image_dir: &Path) -> Result<Option<Library>, LibraryError> {
     }
     images.sort();
 
+    let tags = tags::load(image_dir, &images);
     // Safe: images is non-empty (checked above).
-    let paths = PointedList::new(images).expect("images is non-empty");
+    let paths = PointedList::new(images.clone()).expect("images is non-empty");
 
     Ok(Some(Library {
+        all: images,
         paths,
         image_dir: image_dir.to_path_buf(),
         selection: HashSet::new(),
+        tags,
+        // Opening a folder shows what is in it. A filter carried over from a
+        // previous session would hide photos before the user had seen any.
+        filter: None,
     }))
 }
 
@@ -274,12 +384,22 @@ mod tests {
         images.sort();
 
         let lib = Library {
+            all: images.clone(),
             paths: PointedList::new(images.clone()).unwrap(),
             image_dir: dir.clone(),
             selection: HashSet::new(),
+            tags: Tags::new(),
+            filter: None,
         };
         Fixture { dir, images, lib }
     }
+
+    /// The visible images, in order.
+    fn shown(lib: &Library) -> Vec<PathBuf> {
+        lib.paths.iter().cloned().collect()
+    }
+
+    const FAV: &str = crate::tags::FAVOURITE;
 
     /// The selection as sorted paths, for order-independent comparison.
     fn selected(lib: &Library) -> Vec<PathBuf> {
@@ -427,6 +547,173 @@ mod tests {
         lib.select_all();
         lib.clear_selection();
         assert!(lib.selection.is_empty());
+    }
+
+    // --- Tags ---
+
+    #[test]
+    fn tagging_a_group_tags_all_of_it() {
+        let f = fixture("tag-group");
+        let mut lib = f.lib.clone();
+        assert!(lib.toggle_tag(FAV, &f.images[..2]));
+        assert!(lib.is_tagged(FAV, &f.images[0]));
+        assert!(lib.is_tagged(FAV, &f.images[1]));
+        assert!(!lib.is_tagged(FAV, &f.images[2]));
+    }
+
+    #[test]
+    fn tagging_a_group_that_already_agrees_untags_it() {
+        let f = fixture("tag-untag");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..2]);
+        assert!(!lib.toggle_tag(FAV, &f.images[..2]));
+        assert!(lib.tags.is_empty());
+    }
+
+    #[test]
+    fn tagging_a_mixed_group_brings_it_into_agreement() {
+        let f = fixture("tag-mixed");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..1]);
+        // One of the three carries it. Toggling per image would invert the
+        // group into a differently-mixed one, which nobody could predict.
+        assert!(lib.toggle_tag(FAV, &f.images));
+        assert!(f.images.iter().all(|p| lib.is_tagged(FAV, p)));
+    }
+
+    #[test]
+    fn untagging_the_last_image_drops_the_tag_itself() {
+        let f = fixture("tag-empty");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..1]);
+        lib.toggle_tag(FAV, &f.images[..1]);
+        // Left behind, an empty tag would still be offered as something to
+        // filter by.
+        assert!(!lib.tags.contains_key(FAV));
+    }
+
+    // --- Filtering ---
+
+    #[test]
+    fn a_filter_narrows_the_visible_list() {
+        let f = fixture("filter-narrow");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &[f.images[0].clone(), f.images[2].clone()]);
+
+        assert!(lib.set_filter(Some(FAV.to_string())));
+        assert_eq!(shown(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+        // And back.
+        assert!(lib.set_filter(None));
+        assert_eq!(shown(&lib), f.images);
+    }
+
+    #[test]
+    fn a_hidden_image_cannot_be_selected_at_all() {
+        let f = fixture("filter-select");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..1]);
+        lib.set_filter(Some(FAV.to_string()));
+
+        // The whole point of narrowing the list rather than the drawing: there
+        // is no reachable index for an image the filter hides, so select-all
+        // cannot pick one up and a batch cannot act on one.
+        lib.select_all();
+        assert_eq!(selected(&lib), vec![f.images[0].clone()]);
+        lib.invert_selection();
+        assert!(lib.selection.is_empty());
+        lib.apply_range(0, 99, RangeOp::Add);
+        assert_eq!(selected(&lib), vec![f.images[0].clone()]);
+    }
+
+    #[test]
+    fn filtering_keeps_the_cursor_on_its_image_when_it_can() {
+        let f = fixture("filter-cursor-kept");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &[f.images[1].clone(), f.images[2].clone()]);
+        lib.goto(2);
+
+        lib.set_filter(Some(FAV.to_string()));
+        assert_eq!(lib.current(), &f.images[2]);
+        assert_eq!(lib.paths.index(), 1);
+    }
+
+    #[test]
+    fn filtering_out_the_cursor_lands_it_nearby() {
+        let f = fixture("filter-cursor-moved");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..1]);
+        lib.goto(1);
+
+        lib.set_filter(Some(FAV.to_string()));
+        assert_eq!(lib.current(), &f.images[0]);
+    }
+
+    #[test]
+    fn a_filter_matching_nothing_is_refused() {
+        let f = fixture("filter-empty");
+        let mut lib = f.lib.clone();
+        // An empty wall would say the folder has no photos in it, which is a
+        // lie about a folder that is merely unfiltered-full.
+        assert!(!lib.set_filter(Some(FAV.to_string())));
+        assert_eq!(lib.filter, None);
+        assert_eq!(shown(&lib), f.images);
+    }
+
+    #[test]
+    fn untagging_the_last_visible_image_drops_the_filter() {
+        let f = fixture("filter-drained");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..1]);
+        lib.set_filter(Some(FAV.to_string()));
+
+        lib.toggle_tag(FAV, &f.images[..1]);
+        // Not an error, and not an empty screen: the photos are all still here.
+        assert!(!lib.refilter());
+        assert_eq!(lib.filter, None);
+        assert_eq!(shown(&lib), f.images);
+    }
+
+    #[test]
+    fn untagging_some_of_a_filtered_list_leaves_the_rest() {
+        let f = fixture("filter-shrink");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images);
+        lib.set_filter(Some(FAV.to_string()));
+
+        lib.toggle_tag(FAV, &f.images[..1]);
+        assert!(lib.refilter());
+        assert_eq!(shown(&lib), vec![f.images[1].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn an_image_that_leaves_the_wall_leaves_the_selection() {
+        let f = fixture("filter-deselect");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images);
+        lib.set_filter(Some(FAV.to_string()));
+        lib.select_all();
+
+        lib.toggle_tag(FAV, &f.images[..1]);
+        lib.refilter();
+        // Left selected, it would be in the next batch — and the user would
+        // have no way of seeing that it was.
+        assert_eq!(selected(&lib), vec![f.images[1].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn removing_a_filtered_image_prunes_the_hidden_list_too() {
+        let f = fixture("filter-remove");
+        let mut lib = f.lib.clone();
+        lib.toggle_tag(FAV, &f.images[..2]);
+        lib.set_filter(Some(FAV.to_string()));
+
+        let gone: HashSet<PathBuf> = [f.images[0].clone()].into_iter().collect();
+        assert!(lib.remove(&gone));
+        assert_eq!(shown(&lib), vec![f.images[1].clone()]);
+        // Dropping it from the visible list alone would bring it back the
+        // moment the filter came off.
+        assert!(!lib.all.contains(&f.images[0]));
+        assert!(!lib.is_tagged(FAV, &f.images[0]));
     }
 
     // --- Removal ---
@@ -596,5 +883,26 @@ mod tests {
         let lib = load_library(&dir).unwrap().unwrap();
         let _ = fs::remove_dir_all(&dir);
         assert_eq!(lib.paths.len(), 1);
+    }
+
+    #[test]
+    fn load_picks_up_favourites_from_the_old_cache() {
+        let dir = unique_dir("load-legacy-favs");
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["a.png", "b.png"] {
+            fs::write(dir.join(name), "image").unwrap();
+        }
+        let cache = dir.join(".photo-viewer");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("favourites"), dir.join("b.png").to_str().unwrap()).unwrap();
+
+        let lib = load_library(&dir).unwrap().unwrap();
+        let _ = fs::remove_dir_all(&dir);
+        // Phase 0 left that file in place on purpose; this is what it was for.
+        assert!(lib.is_tagged(FAV, &lib.all[1]));
+        assert!(!lib.is_tagged(FAV, &lib.all[0]));
+        // But the folder still opens showing everything.
+        assert_eq!(lib.filter, None);
+        assert_eq!(lib.paths.len(), 2);
     }
 }

@@ -1,5 +1,6 @@
 //! The wall view: async thumbnails laid out shortest-column masonry, with
-//! keyboard navigation, rotate, click-to-open, and a modal selection.
+//! keyboard navigation, rotate, click-to-open, a modal selection, and the
+//! operations over it — favourite, move, copy, trash.
 //!
 //! Selection is vim-shaped: [`WallMode::Normal`] moves a cursor,
 //! [`WallMode::Visual`] paints a range as the cursor moves, and
@@ -36,6 +37,7 @@ use iced::{
 
 use super::ICON_MARGIN;
 use crate::library::{Library, RangeOp};
+use crate::tags;
 use crate::transfer::{self, Collision, TransferKind, Transferred};
 use crate::Message;
 
@@ -147,6 +149,10 @@ pub(crate) enum WallMsg {
     /// `Cmd+A` / `i`.
     SelectAll,
     InvertSelection,
+    /// `f`: favourite the selection, or the image under the cursor.
+    ToggleFavourite,
+    /// `Shift+F`: show only the favourites, or show everything again.
+    ToggleFilter,
     /// Esc: one rung down the ladder (cancel a running batch, then the painted
     /// range, then the selection).
     Escape,
@@ -528,6 +534,8 @@ impl WallState {
                 self.library.invert_selection();
                 self.settle()
             }
+            WallMsg::ToggleFavourite => self.favourite(),
+            WallMsg::ToggleFilter => self.toggle_filter(),
             WallMsg::Escape => self.escape(),
             WallMsg::StartBatch { kind, paths } => self.start_batch(kind, paths),
             WallMsg::BatchProgress { path, result } => self.batch_progress(path, result),
@@ -627,6 +635,76 @@ impl WallState {
             return self.start_batch(BatchKind::Rotate { clockwise }, selected);
         }
         self.rotate_one(clockwise)
+    }
+
+    /// Favourite the whole selection, or — with nothing selected — the image
+    /// under the cursor.
+    ///
+    /// The same shape as `r`: an operation over the selection where there is
+    /// one, over the cursor where there is not. Unlike `r` it needs no batch —
+    /// a tag is a line in a small text file, not a write per photo.
+    ///
+    /// Ignored while painting, for the reason everything is: an uncommitted
+    /// range has no settled meaning.
+    fn favourite(&mut self) -> Task<Message> {
+        if self.is_visual() {
+            return Task::none();
+        }
+        let paths = match self.operable_selection() {
+            Some(selected) => selected,
+            None => vec![self.library.current().clone()],
+        };
+        self.library.toggle_tag(tags::FAVOURITE, &paths);
+        // Only bites while the favourites are what is on screen, where
+        // un-favouriting takes photos off the wall as it goes.
+        self.library.refilter();
+        self.relaid()
+    }
+
+    /// Show only the favourites, or show everything again.
+    ///
+    /// Refused while anything is selected. A filter that hid a selected photo
+    /// would put images the user cannot see into the next batch; forbidding the
+    /// combination removes that whole class of bug rather than papering over it
+    /// (see `SELECT_MODE_PLAN.md`). Clearing the selection with Esc is one key.
+    fn toggle_filter(&mut self) -> Task<Message> {
+        if self.is_visual() || self.batch.is_some() || !self.library.selection.is_empty() {
+            return Task::none();
+        }
+        let tag = match self.library.filter {
+            Some(_) => None,
+            None => Some(tags::FAVOURITE.to_string()),
+        };
+        if !self.library.set_filter(tag) {
+            // Nothing carries the tag: the wall would go blank and claim the
+            // folder was empty.
+            return Task::none();
+        }
+        // Only the view changed, so there is nothing to write to disk.
+        Task::batch([self.resettled(), self.remeasure()])
+    }
+
+    /// Everything the wall has to redo after the visible list changed, plus the
+    /// write to disk that a tag change earns.
+    fn relaid(&mut self) -> Task<Message> {
+        let save = Task::perform(
+            tags::save_async(self.library.image_dir.clone(), self.library.tags.clone()),
+            Message::TagsSaved,
+        );
+        Task::batch([self.resettled(), save, self.settle()])
+    }
+
+    /// Re-aim the wall at wherever the cursor ended up. The tiles themselves
+    /// have not changed shape, so no thumbnail is thrown away — the masonry
+    /// simply has fewer or more of them to place.
+    fn resettled(&mut self) -> Task<Message> {
+        self.desired_y = None;
+        self.refocus();
+        let reveal = match self.viewport {
+            Some(viewport) => self.reveal(&self.layout(viewport.width)),
+            None => Task::none(),
+        };
+        Task::batch([reveal, self.schedule()])
     }
 
     /// Begin an operation over `paths`.
@@ -1074,7 +1152,19 @@ impl WallState {
         }
 
         let (label, hint) = match self.mode {
-            WallMode::Normal => return None,
+            // Nothing to say in `Normal` — unless the wall is showing a subset
+            // of the folder, which the user must never have to guess at.
+            WallMode::Normal => {
+                return self.library.filter.as_ref().map(|tag| {
+                    let label = format!(
+                        "{} \u{2014} {} of {}",
+                        tag.to_uppercase(),
+                        self.library.paths.len(),
+                        self.library.all.len()
+                    );
+                    self.bar(label, "\u{21e7}F show all \u{b7} f unfavourite")
+                });
+            }
             WallMode::Visual { anchor, op } => {
                 let (total, delta) = self.pending_counts(anchor, op);
                 let verb = match op {
@@ -1088,7 +1178,7 @@ impl WallState {
             }
             WallMode::Select => (
                 format!("SELECT {}", self.library.selection.len()),
-                "r rotate \u{b7} m move \u{b7} c copy \u{b7} d trash \u{b7} v add \u{b7} x remove \u{b7} Esc clear",
+                "f fav \u{b7} r rotate \u{b7} m move \u{b7} c copy \u{b7} d trash \u{b7} v add \u{b7} x remove \u{b7} Esc clear",
             ),
         };
         Some(self.bar(label, hint))
@@ -1207,7 +1297,12 @@ impl WallState {
             );
         }
         if look.badge {
-            layers.push(corner_check());
+            layers.push(corner_badge("\u{2713}", Accent::Select, Horizontal::Right));
+        }
+        if look.star {
+            // Opposite corner from the selection tick, so a favourite that is
+            // also selected shows both rather than one hiding the other.
+            layers.push(favourite_star());
         }
 
         let body: Element<'a, Message> = if layers.len() == 1 {
@@ -1269,6 +1364,9 @@ impl WallState {
             // Kept on a tile pending removal: it is still selected until the
             // range is committed, and saying otherwise would pre-empt the user.
             badge: selected,
+            // Redundant while the wall is filtered to the favourites — every
+            // tile would carry one, which says nothing.
+            star: self.library.filter.is_none() && self.library.is_tagged(tags::FAVOURITE, path),
         }
     }
 }
@@ -1281,6 +1379,7 @@ struct TileLook {
     tint: Option<Accent>,
     tint_alpha: f32,
     badge: bool,
+    star: bool,
 }
 
 /// The three things a tile can be saying, mapped to palette colours by
@@ -1291,6 +1390,7 @@ enum Accent {
     Cursor,
     Select,
     Remove,
+    Favourite,
 }
 
 fn accent_color(theme: &Theme, accent: Accent) -> Color {
@@ -1301,17 +1401,34 @@ fn accent_color(theme: &Theme, accent: Accent) -> Color {
         Accent::Cursor => lighten(palette.primary.base.color, SEL_LIGHTEN),
         Accent::Select => lighten(palette.success.base.color, SEL_LIGHTEN),
         Accent::Remove => lighten(palette.danger.base.color, SEL_LIGHTEN),
+        // Amber, from no palette slot — the four palette roles are spoken for,
+        // and a favourite has to be told apart from a selection at a glance.
+        Accent::Favourite => Color::from_rgb(0.98, 0.75, 0.18),
     }
 }
 
-/// The selected-tile badge: a checkmark in the top-right corner, so selection
-/// is never carried by hue alone.
-fn corner_check() -> Element<'static, Message> {
+/// The favourite marker. Public so the single view draws exactly the same one:
+/// two screens disagreeing about what a favourite looks like would be worse
+/// than either choice.
+pub(crate) fn favourite_star() -> Element<'static, Message> {
+    corner_badge("\u{2605}", Accent::Favourite, Horizontal::Left)
+}
+
+/// A symbol in a rounded pill in one corner of a tile.
+///
+/// A shape as well as a colour, so neither selection nor favouriting is carried
+/// by hue alone.
+fn corner_badge(symbol: &'static str, accent: Accent, side: Horizontal) -> Element<'static, Message> {
+    // The amber is light enough that white on it would not read.
+    let fg = match accent {
+        Accent::Favourite => Color::BLACK,
+        _ => Color::WHITE,
+    };
     container(
-        container(text("\u{2713}").size(18).color(Color::WHITE))
+        container(text(symbol).size(18).color(fg))
             .padding([1, 7])
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(accent_color(theme, Accent::Select))),
+            .style(move |theme: &Theme| container::Style {
+                background: Some(Background::Color(accent_color(theme, accent))),
                 border: Border {
                     radius: 999.0.into(),
                     ..Border::default()
@@ -1321,7 +1438,7 @@ fn corner_check() -> Element<'static, Message> {
     )
     .width(Length::Fill)
     .height(Length::Fill)
-    .align_x(Horizontal::Right)
+    .align_x(side)
     .align_y(Vertical::Top)
     .padding(ICON_MARGIN)
     .into()
@@ -1543,9 +1660,12 @@ mod tests {
     fn wall(heights: &[f32], col_count: usize) -> WallState {
         let files = paths(heights.len());
         let library = Library {
+            all: files.clone(),
             paths: crate::pointed_list::PointedList::new(files.clone()).unwrap(),
             image_dir: PathBuf::from("/wall"),
             selection: HashSet::new(),
+            tags: crate::tags::Tags::new(),
+            filter: None,
         };
         let mut state = WallState::new(library);
         state.ratios = files.into_iter().zip(heights.iter().copied()).collect();
@@ -2233,6 +2353,156 @@ mod tests {
         let _ = state.update(WallMsg::Escape);
         rotate(&mut state);
         assert!(state.operable_selection().is_none());
+    }
+
+    // --- Favourites and the filter ---
+
+    fn fav(state: &mut WallState) {
+        let _ = state.update(WallMsg::ToggleFavourite);
+    }
+
+    fn filter(state: &mut WallState) {
+        let _ = state.update(WallMsg::ToggleFilter);
+    }
+
+    fn starred(state: &WallState) -> Vec<usize> {
+        state
+            .library
+            .all
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| state.library.is_tagged(tags::FAVOURITE, p))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn f_in_normal_favourites_only_the_cursor_image() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(3);
+        fav(&mut state);
+        assert_eq!(starred(&state), vec![3]);
+        // And again takes it back off.
+        fav(&mut state);
+        assert!(starred(&state).is_empty());
+    }
+
+    #[test]
+    fn f_in_select_favourites_the_whole_selection() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        let _ = state.update(WallMsg::CommitVisual);
+
+        fav(&mut state);
+        assert_eq!(starred(&state), vec![0, 1]);
+        // The selection is untouched, so it can be acted on again.
+        assert_eq!(selected(&state), vec![0, 1]);
+    }
+
+    #[test]
+    fn f_is_ignored_while_painting() {
+        let mut state = wall(&[200.0; 6], 1);
+        enter_visual(&mut state, RangeOp::Add);
+        nav(&mut state, Dir::Down);
+        fav(&mut state);
+        // An uncommitted range has no settled meaning, so there is no honest
+        // answer to "which images?".
+        assert!(starred(&state).is_empty());
+    }
+
+    #[test]
+    fn the_filter_narrows_the_wall_to_the_favourites() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(4);
+        fav(&mut state);
+        state.library.goto(1);
+        fav(&mut state);
+
+        filter(&mut state);
+        assert_eq!(state.library.paths.len(), 2);
+        // The cursor was on a favourite, so it stays on that photo.
+        assert_eq!(state.library.current(), &state.library.all[1]);
+
+        filter(&mut state);
+        assert_eq!(state.library.paths.len(), 6);
+    }
+
+    #[test]
+    fn the_filter_is_refused_while_anything_is_selected() {
+        let mut state = wall(&[200.0; 6], 1);
+        fav(&mut state);
+        let _ = state.update(WallMsg::SelectAll);
+
+        filter(&mut state);
+        // A filter that hid a selected photo would put images the user cannot
+        // see into the next batch. Esc clears the selection in one key.
+        assert_eq!(state.library.filter, None);
+        assert_eq!(state.library.paths.len(), 6);
+    }
+
+    #[test]
+    fn the_filter_is_refused_when_nothing_is_favourited() {
+        let mut state = wall(&[200.0; 6], 1);
+        filter(&mut state);
+        // A blank wall would claim the folder was empty.
+        assert_eq!(state.library.filter, None);
+        assert_eq!(state.library.paths.len(), 6);
+    }
+
+    #[test]
+    fn unfavouriting_the_last_one_puts_the_whole_folder_back() {
+        let mut state = wall(&[200.0; 6], 1);
+        fav(&mut state);
+        filter(&mut state);
+        assert_eq!(state.library.paths.len(), 1);
+
+        fav(&mut state);
+        assert_eq!(state.library.filter, None);
+        assert_eq!(state.library.paths.len(), 6);
+    }
+
+    #[test]
+    fn unfavouriting_a_selected_photo_while_filtered_deselects_it() {
+        let mut state = wall(&[200.0; 6], 1);
+        let _ = state.update(WallMsg::SelectAll);
+        fav(&mut state);
+        let _ = state.update(WallMsg::Escape); // clear, so the filter is allowed
+        filter(&mut state);
+
+        state.library.goto(2);
+        let _ = state.update(WallMsg::ToggleCursor);
+        fav(&mut state);
+
+        // It left the wall, so it must leave the selection with it — otherwise
+        // the next batch would touch a photo nobody can see.
+        assert_eq!(state.library.paths.len(), 5);
+        assert!(state.library.selection.is_empty());
+        assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn the_star_is_hidden_while_the_wall_is_already_all_favourites() {
+        let mut state = wall(&[200.0; 6], 1);
+        let path = state.library.current().clone();
+        fav(&mut state);
+        assert!(state.tile_look(0, &path, 0).star);
+
+        filter(&mut state);
+        // Every tile would carry one, which says nothing.
+        assert!(!state.tile_look(0, &path, 0).star);
+    }
+
+    #[test]
+    fn a_favourite_that_is_also_selected_shows_both_marks() {
+        let mut state = wall(&[200.0; 6], 1);
+        let path = state.library.current().clone();
+        fav(&mut state);
+        let _ = state.update(WallMsg::ToggleCursor);
+
+        let look = state.tile_look(0, &path, 0);
+        assert!(look.star);
+        assert!(look.badge);
     }
 
     // --- Removal ---

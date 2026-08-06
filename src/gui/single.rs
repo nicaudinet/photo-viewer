@@ -1,13 +1,13 @@
 //! The single view: one fit-to-window image, with navigation and rotate.
 //!
 //! Every action here applies to the current image and nothing else — see
-//! `SELECT_MODE_PLAN.md`. The favourite/delete overlays this view used to carry
-//! were removed in phase 0.
+//! `SELECT_MODE_PLAN.md`. That includes `f`: whatever the wall has selected,
+//! favouriting from this screen touches the photo on it and no other.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use iced::widget::{image, Space};
+use iced::widget::{image, Space, Stack};
 use iced::{ContentFit, Element, Length, Task};
 
 use crate::library::Library;
@@ -23,6 +23,9 @@ pub(crate) enum SingleMsg {
     RotateAnticlockwise,
     /// `Shift+R`: rotate the current image clockwise, writing it to disk.
     RotateClockwise,
+    /// `f`: favourite the current image — and, as with everything on this
+    /// screen, only the current image, whatever else is selected.
+    ToggleFavourite,
     /// Result of a rotate: on success, re-decode the (now rotated) file.
     /// Carries its own path — the view may have moved on while the write was
     /// in flight.
@@ -69,6 +72,21 @@ impl SingleState {
             }
             SingleMsg::RotateAnticlockwise => self.rotate(false),
             SingleMsg::RotateClockwise => self.rotate(true),
+            SingleMsg::ToggleFavourite => {
+                let path = self.library.current().clone();
+                self.library.toggle_tag(crate::tags::FAVOURITE, &[path]);
+                // No `refilter` here: the wall owns which images are on show,
+                // and it re-derives that on entry. Dropping the current image
+                // out from under the single view would be the one thing this
+                // screen must never do.
+                Task::perform(
+                    crate::tags::save_async(
+                        self.library.image_dir.clone(),
+                        self.library.tags.clone(),
+                    ),
+                    Message::TagsSaved,
+                )
+            }
             SingleMsg::Rotated { path, result } => {
                 self.rotating.remove(&path);
                 match result {
@@ -152,7 +170,7 @@ impl SingleState {
     }
 
     pub(crate) fn view(&self) -> Element<'_, Message> {
-        match &self.large {
+        let photo: Element<'_, Message> = match &self.large {
             Some(handle) => image(handle.clone())
                 .content_fit(ContentFit::Contain)
                 .width(Length::Fill)
@@ -162,6 +180,14 @@ impl SingleState {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
+        };
+
+        // Same star, same corner as on the wall, so the two screens agree about
+        // what a favourite looks like.
+        if self.library.is_tagged(crate::tags::FAVOURITE, self.library.current()) {
+            Stack::with_children(vec![photo, super::wall::favourite_star()]).into()
+        } else {
+            photo
         }
     }
 }
@@ -174,9 +200,12 @@ mod tests {
     fn single(n: usize) -> SingleState {
         let files: Vec<PathBuf> = (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect();
         SingleState::new(Library {
+            all: files.clone(),
             paths: crate::pointed_list::PointedList::new(files).unwrap(),
             image_dir: PathBuf::from("/imgs"),
             selection: HashSet::new(),
+            tags: crate::tags::Tags::new(),
+            filter: None,
         })
     }
 

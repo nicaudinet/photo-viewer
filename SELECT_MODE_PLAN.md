@@ -83,6 +83,10 @@ selected images means a delete-selected can destroy files the user cannot see �
 disabling the combination removes the entire bug class rather than papering over
 it with warnings.
 
+Phase 6 kept that rule and then made it belt-and-braces: the filter narrows the
+list the cursor and the selection are expressed in, so a hidden image has no
+index anything can name. See Phase 6.
+
 ### Single view never touches more than one image
 
 Every action in the single view applies to the current image and nothing else,
@@ -366,6 +370,49 @@ a filter that shows only tagged images. Two constraints carry over: the filter
 must be **disabled while a selection is active**, and storage should probably be
 general tags rather than one hard-coded flag — which turns the old
 `save_favourites` into a special case of Phase 5's `c`.
+
+Delivered as:
+
+- **`f` favourites the selection, or the cursor image with nothing selected** —
+  the same shape as `r`. No batch: a tag is a line in a small text file, not a
+  write per photo. Toggling a *group* makes the group agree (add unless they all
+  carry it already) rather than inverting each image, because inverting a mixed
+  selection produces a differently-mixed one that nobody can predict.
+- **`Shift+F` filters the wall to the favourites.**
+- **`src/tags.rs`**: `BTreeMap<String, HashSet<PathBuf>>`, one file per tag under
+  `<image_dir>/.photo-viewer/tags/`. Only `favourite` is reachable from the
+  keyboard; the store already handles the rest, which is the general-tags half
+  of the note above. Entries are **file names, not absolute paths** as the old
+  cache held: the store lives in the folder it describes, so naming its contents
+  relative to it means renaming or moving that folder keeps the tags attached.
+  The `.photo-viewer/favourites` file phase 0 deliberately left behind is read
+  once, on first load, and then superseded.
+- Written after every change rather than behind a save key. A favourite the app
+  forgot because nobody saved it is worse than any number of tiny writes.
+
+### The filter narrows the list, not the drawing
+
+The removed implementation kept `paths` whole and filtered where thumbnails were
+drawn (`is_displayed`). That is what made the constraint above necessary: with
+the full list still addressable, `Cmd+A`, a painted range and every batch could
+reach images the user could not see.
+
+`Library` now holds `all` and derives `paths` from it, so **a hidden image has
+no reachable index at all**. The constraint is still enforced at the wall —
+`Shift+F` is refused while anything is selected — but it is no longer the only
+thing standing between the user and a batch operating on invisible photos.
+
+Three consequences, each with a test:
+
+- Anything that leaves the visible list leaves the selection with it, so
+  un-favouriting a selected photo while filtered deselects it.
+- A filter matching nothing is refused: a blank wall would claim the folder was
+  empty when it is merely unfiltered-full.
+- Un-favouriting the last favourite while filtered drops the filter rather than
+  emptying the screen.
+
+The old **mark-to-delete** does not come back. `d` trashes a selection outright
+(phase 4), which is what marking-then-deleting was a two-step way of doing.
 
 ---
 

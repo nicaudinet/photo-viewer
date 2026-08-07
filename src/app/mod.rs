@@ -39,11 +39,6 @@ use confirm::Confirm;
 /// lives in the `Screen` variant that needs it.
 pub(crate) struct App {
     screen: Screen,
-    /// Bumped on every large decode (nav / open / rotate / toggle); tags
-    /// `SingleMsg::LargeDecoded` so a superseded decode can't overwrite a newer
-    /// one. Global and monotonic — kept out of `SingleState` so it can't reset
-    /// and let a stale in-flight decode collide with a fresh session's number.
-    generation: u64,
     help_open: bool,
     fullscreen: bool,
     /// The window starts hidden (`visible: false`) and is revealed on its first
@@ -66,7 +61,6 @@ impl App {
     pub(crate) fn new() -> (App, Task<Message>) {
         let mut app = App {
             screen: Screen::Empty,
-            generation: 0,
             help_open: false,
             fullscreen: false,
             revealed: false,

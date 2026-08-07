@@ -81,8 +81,36 @@ impl WallState {
         if !finished {
             return Task::batch([invalidate, self.refill(), self.schedule()]);
         }
+        Task::batch([invalidate, self.end_batch()])
+    }
 
-        let gone = self.batch.take().expect("checked just above").finish();
+    /// Stop dispatching new work. Files already handed to the runtime finish —
+    /// abandoning a write half-done is how a photo gets corrupted.
+    ///
+    /// A batch with nothing in flight is already over, so cancelling one ends
+    /// it here rather than waiting for a landing that will never come.
+    pub(super) fn cancel_batch(&mut self) -> Task<Message> {
+        let Some(batch) = &mut self.batch else {
+            return Task::none();
+        };
+        batch.cancel();
+        if batch.is_finished() {
+            return self.end_batch();
+        }
+        Task::none()
+    }
+
+    /// Take the finished batch down and re-aim the wall around what it did.
+    ///
+    /// The one place a batch ends, so a cancelled one reports its failures and
+    /// hands back its departed files exactly like a completed one. Reaching
+    /// here by either route with work unaccounted for is what the split
+    /// versions of this used to allow.
+    fn end_batch(&mut self) -> Task<Message> {
+        let Some(batch) = self.batch.take() else {
+            return Task::none();
+        };
+        let gone = batch.finish();
         // Every tile the batch touched changed shape or left, so a sticky
         // centre from before it means nothing now.
         self.desired_y = None;
@@ -97,21 +125,7 @@ impl WallState {
                 failed: Vec::new(),
             })
         };
-        Task::batch([invalidate, removed, self.remeasure(), self.schedule()])
-    }
-
-    /// Stop dispatching new work. Files already handed to the runtime finish —
-    /// abandoning a write half-done is how a photo gets corrupted.
-    pub(super) fn cancel_batch(&mut self) -> Task<Message> {
-        let Some(batch) = &mut self.batch else {
-            return Task::none();
-        };
-        batch.cancel();
-        if batch.is_finished() {
-            self.batch = None;
-            return self.remeasure();
-        }
-        Task::none()
+        Task::batch([removed, self.remeasure(), self.schedule()])
     }
 }
 

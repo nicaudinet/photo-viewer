@@ -204,3 +204,97 @@ impl Batch {
         self.cancelled
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paths(n: usize) -> Vec<PathBuf> {
+        (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect()
+    }
+
+    fn rotating(n: usize) -> Batch {
+        Batch::new(BatchKind::Rotate { clockwise: true }, paths(n))
+    }
+
+    #[test]
+    fn a_claim_never_exceeds_the_cap() {
+        let mut batch = rotating(10);
+        assert_eq!(batch.claim(3).len(), 3);
+        // Three are out, so the cap leaves room for none.
+        assert!(batch.claim(3).is_empty());
+
+        batch.record(&paths(10)[0], Ok(FileDone::Unchanged));
+        assert_eq!(batch.claim(3).len(), 1);
+    }
+
+    #[test]
+    fn a_claim_stops_at_the_end_of_the_queue() {
+        let mut batch = rotating(2);
+        assert_eq!(batch.claim(8).len(), 2);
+        assert!(batch.claim(8).is_empty());
+    }
+
+    #[test]
+    fn a_batch_is_finished_only_once_everything_has_landed() {
+        let files = paths(2);
+        let mut batch = rotating(2);
+        batch.claim(8);
+        assert!(!batch.is_finished());
+
+        batch.record(&files[0], Ok(FileDone::Unchanged));
+        assert!(!batch.is_finished(), "one file is still in flight");
+
+        batch.record(&files[1], Ok(FileDone::Unchanged));
+        assert!(batch.is_finished());
+    }
+
+    #[test]
+    fn cancelling_stops_new_work_but_not_what_is_out() {
+        let files = paths(10);
+        let mut batch = rotating(10);
+        batch.claim(2);
+        batch.cancel();
+
+        assert!(batch.claim(8).is_empty(), "cancelled, so nothing more goes out");
+        assert!(!batch.is_finished(), "two files are still writing");
+
+        batch.record(&files[0], Ok(FileDone::Unchanged));
+        batch.record(&files[1], Ok(FileDone::Unchanged));
+        assert!(batch.is_finished());
+    }
+
+    #[test]
+    fn a_cancelled_batch_still_hands_back_the_files_that_left() {
+        let files = paths(4);
+        let mut batch = Batch::new(
+            BatchKind::Transfer {
+                kind: TransferKind::Move,
+                dest: PathBuf::from("/elsewhere"),
+                collision: Collision::Skip,
+            },
+            files.clone(),
+        );
+        batch.claim(2);
+        batch.record(&files[0], Ok(FileDone::Gone));
+        batch.cancel();
+        batch.record(&files[1], Ok(FileDone::Gone));
+
+        // Cancelling is not a reason to forget that two photos moved: the wall
+        // would keep showing files that are no longer in the folder.
+        assert_eq!(batch.finish(), files[..2].to_vec());
+    }
+
+    #[test]
+    fn a_failure_is_recorded_and_reported_as_no_change() {
+        let files = paths(2);
+        let mut batch = rotating(2);
+        batch.claim(8);
+        assert_eq!(
+            batch.record(&files[0], Err("nope".into())),
+            FileDone::Unchanged
+        );
+        batch.record(&files[1], Ok(FileDone::Reshaped));
+        assert_eq!(batch.failed_len(), 1);
+    }
+}

@@ -132,7 +132,7 @@ impl App {
 
             // Screen-local: only acts when that screen is current.
             Message::Single(m) => match &mut self.screen {
-                Screen::Single(s) => s.update(m, &mut self.generation),
+                Screen::Single(s) => s.update(m),
                 _ => Task::none(),
             },
             Message::Wall(m) => match &mut self.screen {

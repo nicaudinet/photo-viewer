@@ -111,7 +111,6 @@ mod tests {
     fn asked(keys: &[char]) -> App {
         App {
             screen: Screen::Empty,
-            generation: 0,
             help_open: false,
             fullscreen: false,
             revealed: false,

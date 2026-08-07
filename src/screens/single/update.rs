@@ -11,15 +11,15 @@ use super::message::SingleMsg;
 use super::SingleState;
 
 impl SingleState {
-    pub(crate) fn update(&mut self, msg: SingleMsg, generation: &mut u64) -> Task<Message> {
+    pub(crate) fn update(&mut self, msg: SingleMsg) -> Task<Message> {
         match msg {
             SingleMsg::Next => {
                 self.library.next();
-                self.decode_current(generation)
+                self.decode_current()
             }
             SingleMsg::Prev => {
                 self.library.prev();
-                self.decode_current(generation)
+                self.decode_current()
             }
             SingleMsg::RotateAnticlockwise => self.rotate(false),
             SingleMsg::RotateClockwise => self.rotate(true),
@@ -50,7 +50,7 @@ impl SingleState {
                     // has since moved to a different image. (Wall thumbnails
                     // are rebuilt on next entry, so none is stale here.)
                     Ok(()) if self.library.current() == &path => {
-                        self.decode_current(generation)
+                        self.decode_current()
                     }
                     Ok(()) => Task::none(),
                     Err(e) => {
@@ -64,7 +64,7 @@ impl SingleState {
                 result,
             } => {
                 // Generation gate: drop a decode superseded by a newer request.
-                if tagged == *generation {
+                if tagged == self.generation {
                     match result {
                         Ok(handle) => self.large = Some(handle),
                         Err(e) => eprintln!("Decode error: {e}"),
@@ -116,6 +116,7 @@ impl SingleState {
 mod tests {
     use super::*;
     use crate::core::library::Library;
+    use iced::widget::image;
     use crate::screens::single::SingleState;
     use std::collections::HashSet;
 
@@ -143,14 +144,10 @@ mod tests {
         assert_eq!(state.claim_rotate(), None);
 
         // The claim is released once the write lands.
-        let mut generation = 0;
-        let _ = state.update(
-            SingleMsg::Rotated {
-                path: path.clone(),
-                result: Ok(()),
-            },
-            &mut generation,
-        );
+        let _ = state.update(SingleMsg::Rotated {
+            path: path.clone(),
+            result: Ok(()),
+        });
         assert_eq!(state.claim_rotate(), Some(path));
     }
 
@@ -164,14 +161,20 @@ mod tests {
         assert!(state.claim_rotate().is_some());
     }
 
+    /// Whether handling `msg` asked for a fresh decode. Read as a change
+    /// rather than an absolute number: generations come from a process-wide
+    /// counter, so what they start at depends on what else has run.
+    fn decodes(state: &mut SingleState, msg: SingleMsg) -> bool {
+        let before = state.generation;
+        let _ = state.update(msg);
+        state.generation != before
+    }
+
     #[test]
     fn a_rotate_re_decodes_the_image_it_rotated() {
         let mut state = single(2);
         let path = state.library.current().clone();
-        let mut generation = 0;
-        let _ = state.update(SingleMsg::Rotated { path, result: Ok(()) }, &mut generation);
-        // `decode_current` bumps the generation; nothing else here does.
-        assert_eq!(generation, 1);
+        assert!(decodes(&mut state, SingleMsg::Rotated { path, result: Ok(()) }));
     }
 
     #[test]
@@ -179,12 +182,12 @@ mod tests {
         let mut state = single(2);
         let path = state.library.current().clone();
         state.library.next();
-
-        let mut generation = 0;
-        let _ = state.update(SingleMsg::Rotated { path, result: Ok(()) }, &mut generation);
         // Re-decoding here would replace the image on screen with the one the
         // user just navigated off.
-        assert_eq!(generation, 0);
+        assert!(!decodes(
+            &mut state,
+            SingleMsg::Rotated { path, result: Ok(()) }
+        ));
     }
 
     #[test]
@@ -193,15 +196,38 @@ mod tests {
         let path = state.library.current().clone();
         assert_eq!(state.claim_rotate(), Some(path.clone()));
 
-        let mut generation = 0;
-        let _ = state.update(
+        assert!(!decodes(
+            &mut state,
             SingleMsg::Rotated {
                 path: path.clone(),
                 result: Err("nope".into()),
-            },
-            &mut generation,
-        );
-        assert_eq!(generation, 0);
+            }
+        ));
         assert_eq!(state.claim_rotate(), Some(path));
+    }
+
+    #[test]
+    fn a_decode_landing_from_an_earlier_visit_is_dropped() {
+        // Leaving the single view and coming back builds a fresh state. The
+        // decode the previous one asked for is still in flight.
+        let mut left = single(2);
+        let _ = left.decode_current();
+        let stale = left.generation;
+
+        let mut returned = single(2);
+        let _ = returned.decode_current();
+        assert!(
+            returned.generation > stale,
+            "a fresh screen reused a generation the previous one had handed out"
+        );
+
+        let _ = returned.update(SingleMsg::LargeDecoded {
+            generation: stale,
+            result: Ok(image::Handle::from_rgba(1, 1, vec![0, 0, 0, 255])),
+        });
+        assert!(
+            returned.large.is_none(),
+            "pixels from the previous visit landed on the current image"
+        );
     }
 }

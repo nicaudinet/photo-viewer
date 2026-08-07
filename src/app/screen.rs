@@ -49,8 +49,8 @@ impl App {
                 // A file: open it directly in single view.
                 Some(file) => {
                     lib.paths.goto_value(&file);
-                    let single = SingleState::new(lib);
-                    let task = single.decode_current(&mut self.generation);
+                    let mut single = SingleState::new(lib);
+                    let task = single.decode_current();
                     self.screen = Screen::Single(single);
                     task
                 }
@@ -81,8 +81,8 @@ impl App {
             Screen::Wall(w) => {
                 let mut library = w.library;
                 library.goto(index);
-                let single = SingleState::new(library);
-                let task = single.decode_current(&mut self.generation);
+                let mut single = SingleState::new(library);
+                let task = single.decode_current();
                 self.screen = Screen::Single(single);
                 task
             }
@@ -105,8 +105,8 @@ impl App {
                 task
             }
             Screen::Wall(w) => {
-                let single = SingleState::new(w.library);
-                let task = single.decode_current(&mut self.generation);
+                let mut single = SingleState::new(w.library);
+                let task = single.decode_current();
                 self.screen = Screen::Single(single);
                 task
             }

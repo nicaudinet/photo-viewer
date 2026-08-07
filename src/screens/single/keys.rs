@@ -17,10 +17,7 @@ impl SingleState {
     /// the two screens are free to disagree about what a key does — `f` here
     /// favourites one photo, not a selection.
     pub(crate) fn key(&self, event: &keyboard::Event) -> Option<SingleMsg> {
-        let keyboard::Event::KeyPressed {
-            key, modifiers, ..
-        } = event
-        else {
+        let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
             return None;
         };
         match key.as_ref() {
@@ -35,5 +32,4 @@ impl SingleState {
             _ => None,
         }
     }
-
 }

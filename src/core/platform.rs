@@ -53,10 +53,7 @@ mod macos {
 
     /// FourCharCode (OSType) from a 4-byte tag, e.g. `b"odoc"`.
     const fn fourcc(tag: &[u8; 4]) -> u32 {
-        ((tag[0] as u32) << 24)
-            | ((tag[1] as u32) << 16)
-            | ((tag[2] as u32) << 8)
-            | (tag[3] as u32)
+        ((tag[0] as u32) << 24) | ((tag[1] as u32) << 16) | ((tag[2] as u32) << 8) | (tag[3] as u32)
     }
 
     const K_CORE_EVENT_CLASS: u32 = fourcc(b"aevt"); // kCoreEventClass
@@ -176,7 +173,9 @@ mod macos {
             center.addObserver_selector_name_object(
                 &handler,
                 sel!(applicationDidFinishLaunching:),
-                Some(&NSString::from_str("NSApplicationDidFinishLaunchingNotification")),
+                Some(&NSString::from_str(
+                    "NSApplicationDidFinishLaunchingNotification",
+                )),
                 None,
             );
         }
@@ -206,9 +205,11 @@ mod macos {
             let url = NSURL::fileURLWithPath(&NSString::from_str(path));
             let abs = url.absoluteString().expect("absoluteString").to_string();
             let data = NSData::with_bytes(abs.as_bytes());
-            let furl =
-                NSAppleEventDescriptor::descriptorWithDescriptorType_data(TYPE_FILE_URL, Some(&data))
-                    .expect("furl descriptor");
+            let furl = NSAppleEventDescriptor::descriptorWithDescriptorType_data(
+                TYPE_FILE_URL,
+                Some(&data),
+            )
+            .expect("furl descriptor");
 
             let list = NSAppleEventDescriptor::listDescriptor();
             list.insertDescriptor_atIndex(&furl, 1);

@@ -460,7 +460,10 @@ mod tests {
         let f = fixture("sel-range");
         let mut lib = f.lib.clone();
         lib.apply_range(0, 1, RangeOp::Add);
-        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[1].clone()]);
+        assert_eq!(
+            selected(&lib),
+            vec![f.images[0].clone(), f.images[1].clone()]
+        );
     }
 
     #[test]
@@ -491,7 +494,10 @@ mod tests {
         lib.apply_range(0, 0, RangeOp::Add);
         lib.apply_range(2, 2, RangeOp::Add);
         // The first run survives the second: scattered runs accumulate.
-        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+        assert_eq!(
+            selected(&lib),
+            vec![f.images[0].clone(), f.images[2].clone()]
+        );
     }
 
     #[test]
@@ -526,7 +532,10 @@ mod tests {
         let mut lib = f.lib.clone();
         lib.toggle_selected(1);
         lib.invert_selection();
-        assert_eq!(selected(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+        assert_eq!(
+            selected(&lib),
+            vec![f.images[0].clone(), f.images[2].clone()]
+        );
     }
 
     #[test]
@@ -697,7 +706,10 @@ mod tests {
         lib.refilter();
         // Left selected, it would be in the next batch — and the user would
         // have no way of seeing that it was.
-        assert_eq!(selected(&lib), vec![f.images[1].clone(), f.images[2].clone()]);
+        assert_eq!(
+            selected(&lib),
+            vec![f.images[1].clone(), f.images[2].clone()]
+        );
     }
 
     #[test]
@@ -728,7 +740,10 @@ mod tests {
         assert!(lib.remove(&gone));
         assert_eq!(lib.paths.len(), 2);
         assert!(!lib.paths.contains(&f.images[0]));
-        assert_eq!(selected(&lib), vec![f.images[1].clone(), f.images[2].clone()]);
+        assert_eq!(
+            selected(&lib),
+            vec![f.images[1].clone(), f.images[2].clone()]
+        );
     }
 
     #[test]
@@ -894,7 +909,11 @@ mod tests {
         }
         let cache = dir.join(".photo-viewer");
         fs::create_dir_all(&cache).unwrap();
-        fs::write(cache.join("favourites"), dir.join("b.png").to_str().unwrap()).unwrap();
+        fs::write(
+            cache.join("favourites"),
+            dir.join("b.png").to_str().unwrap(),
+        )
+        .unwrap();
 
         let lib = load_library(&dir).unwrap().unwrap();
         let _ = fs::remove_dir_all(&dir);

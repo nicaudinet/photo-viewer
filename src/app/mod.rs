@@ -29,7 +29,6 @@ use std::path::PathBuf;
 
 use iced::{keyboard, Task};
 
-
 pub(crate) use message::Message;
 pub(crate) use screen::Screen;
 

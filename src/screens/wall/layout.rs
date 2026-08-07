@@ -245,9 +245,14 @@ mod tests {
         // First tile starts below the container's top padding, not at 0.
         assert_eq!(layout.slots[&0].y, WALL_SPACING);
         // Second is a tile (200 + 2 * ring) and a gap further down.
-        assert_eq!(layout.slots[&1].y, WALL_SPACING + 200.0 + 2.0 * SEL_BORDER + WALL_SPACING);
+        assert_eq!(
+            layout.slots[&1].y,
+            WALL_SPACING + 200.0 + 2.0 * SEL_BORDER + WALL_SPACING
+        );
         // Content height includes the bottom padding.
-        assert_eq!(layout.content_height, layout.slots[&1].y + 200.0 + 2.0 * SEL_BORDER + WALL_SPACING);
+        assert_eq!(
+            layout.content_height,
+            layout.slots[&1].y + 200.0 + 2.0 * SEL_BORDER + WALL_SPACING
+        );
     }
-
 }

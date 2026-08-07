@@ -16,19 +16,18 @@ impl SingleState {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
-            None => Space::new()
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
+            None => Space::new().width(Length::Fill).height(Length::Fill).into(),
         };
 
         // Same star, same corner as on the wall, so the two screens agree about
         // what a favourite looks like.
-        if self.library.is_tagged(tags::FAVOURITE, self.library.current()) {
+        if self
+            .library
+            .is_tagged(tags::FAVOURITE, self.library.current())
+        {
             Stack::with_children(vec![photo, crate::screens::wall::favourite_star()]).into()
         } else {
             photo
         }
     }
-
 }

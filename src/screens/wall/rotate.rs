@@ -9,9 +9,9 @@ use iced::Task;
 
 use crate::Message;
 
-use super::ops::rotate_async;
 use super::layout::THUMB_WIDTH;
 use super::message::WallMsg;
+use super::ops::rotate_async;
 use super::WallState;
 
 impl WallState {

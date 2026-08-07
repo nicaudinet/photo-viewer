@@ -39,7 +39,9 @@ pub(crate) enum WallMsg {
     /// Move the selection one thumbnail in `Dir`.
     Nav(Dir),
     /// `r` / `Shift+R`: rotate the selected image 90°, writing it to disk.
-    Rotate { clockwise: bool },
+    Rotate {
+        clockwise: bool,
+    },
     /// Result of a rotate. Carries its own path: the selection may have moved
     /// while the write was in flight.
     Rotated {
@@ -48,7 +50,9 @@ pub(crate) enum WallMsg {
     },
     /// `v` / `x`: start painting a range from the cursor — or, pressed while
     /// already painting one, cancel it.
-    EnterVisual { op: RangeOp },
+    EnterVisual {
+        op: RangeOp,
+    },
     /// Enter: fold the painted range into the selection.
     CommitVisual,
     /// `Space`: add or remove the single image under the cursor.

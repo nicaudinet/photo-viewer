@@ -36,10 +36,7 @@ impl WallState {
     /// commits a painted range if there is one and otherwise opens the image
     /// under the cursor.
     pub(crate) fn key(&self, event: &keyboard::Event) -> Option<WallKey> {
-        let keyboard::Event::KeyPressed {
-            key, modifiers, ..
-        } = event
-        else {
+        let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
             return None;
         };
 
@@ -78,7 +75,9 @@ impl WallState {
             keyboard::Key::Character("f") => WallMsg::ToggleFavourite,
 
             keyboard::Key::Character("R") => WallMsg::Rotate { clockwise: true },
-            keyboard::Key::Character("r") if modifiers.shift() => WallMsg::Rotate { clockwise: true },
+            keyboard::Key::Character("r") if modifiers.shift() => {
+                WallMsg::Rotate { clockwise: true }
+            }
             keyboard::Key::Character("r") => WallMsg::Rotate { clockwise: false },
 
             _ => return None,

@@ -38,7 +38,10 @@ impl App {
     /// that file; a directory opens in the wall view (matching the Python app).
     pub(super) fn open(&mut self, path: PathBuf) -> Task<Message> {
         let (dir, target) = if path.is_file() {
-            let parent = path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.clone());
+            let parent = path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| path.clone());
             (parent, Some(path))
         } else {
             (path, None)
@@ -117,7 +120,11 @@ impl App {
     /// Images have left the library's folder — trashed, or moved elsewhere.
     /// Falls back to the empty screen if none are left, which is why this sits
     /// here rather than on the wall: only `App` can change screens.
-    pub(super) fn removed(&mut self, gone: Vec<PathBuf>, failed: Vec<(PathBuf, String)>) -> Task<Message> {
+    pub(super) fn removed(
+        &mut self,
+        gone: Vec<PathBuf>,
+        failed: Vec<(PathBuf, String)>,
+    ) -> Task<Message> {
         for (path, error) in &failed {
             eprintln!("Could not trash {}: {error}", path.display());
         }
@@ -145,5 +152,4 @@ impl App {
             Screen::Empty => None,
         }
     }
-
 }

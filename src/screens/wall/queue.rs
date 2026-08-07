@@ -256,7 +256,10 @@ mod tests {
         batch.claim(2);
         batch.cancel();
 
-        assert!(batch.claim(8).is_empty(), "cancelled, so nothing more goes out");
+        assert!(
+            batch.claim(8).is_empty(),
+            "cancelled, so nothing more goes out"
+        );
         assert!(!batch.is_finished(), "two files are still writing");
 
         batch.record(&files[0], Ok(FileDone::Unchanged));

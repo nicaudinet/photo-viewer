@@ -11,7 +11,9 @@ use crate::Message;
 use super::layout::{WallLayout, SEL_BORDER, THUMB_WIDTH, TILE_WIDTH, WALL_SPACING};
 use super::message::WallMsg;
 use super::navigate::WALL_ID;
-use super::tile::{accent_color, corner_badge, favourite_star, placeholder_style, thumb_button_style, Accent};
+use super::tile::{
+    accent_color, corner_badge, favourite_star, placeholder_style, thumb_button_style, Accent,
+};
 use super::WallState;
 
 impl WallState {

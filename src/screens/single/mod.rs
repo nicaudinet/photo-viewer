@@ -55,7 +55,6 @@ fn next_generation() -> u64 {
     GENERATION.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-
 impl SingleState {
     pub(crate) fn new(library: Library) -> Self {
         Self {
@@ -65,7 +64,6 @@ impl SingleState {
             generation: 0,
         }
     }
-
 
     /// Kick off an off-thread decode of the current image, tagged with a fresh
     /// generation so an earlier in-flight decode can't overwrite it.
@@ -82,5 +80,4 @@ impl SingleState {
             move |result| Message::Single(SingleMsg::LargeDecoded { generation, result }),
         )
     }
-
 }

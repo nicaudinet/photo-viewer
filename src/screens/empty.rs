@@ -6,9 +6,7 @@ use iced::{Border, Element, Theme};
 use crate::Message;
 
 pub(crate) fn empty_view() -> Element<'static, Message> {
-    let label = text("No image loaded\nPress ? for help!")
-        .size(18)
-        .center();
+    let label = text("No image loaded\nPress ? for help!").size(18).center();
     center(
         container(label)
             .padding(60)

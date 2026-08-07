@@ -25,8 +25,8 @@
 //! | [`ops`] | what that operation does to one file |
 //! | [`view`], [`bar`], [`tile`] | the widget tree |
 
-mod batch;
 mod bar;
+mod batch;
 mod keys;
 mod layout;
 mod message;
@@ -53,11 +53,11 @@ use iced::{Size, Task};
 use crate::core::library::Library;
 use crate::Message;
 
-pub(crate) use message::WallMsg;
 pub(crate) use keys::WallKey;
+pub(crate) use message::WallMsg;
 pub(crate) use mouse::Click;
-pub(crate) use queue::BatchKind;
 pub(crate) use navigate::measure;
+pub(crate) use queue::BatchKind;
 pub(crate) use select::WallMode;
 pub(crate) use tile::favourite_star;
 

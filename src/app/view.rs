@@ -82,15 +82,17 @@ fn overlay_box(theme: &Theme) -> container::Style {
 
 pub(crate) fn help_overlay() -> Element<'static, Message> {
     let title = text("Keyboard Shortcuts").size(24);
-    let rows = SHORTCUTS.iter().fold(column![].spacing(10), |col, (keys, desc)| {
-        col.push(
-            row![
-                text(*keys).size(16).width(Length::Fixed(90.0)),
-                text(*desc).size(16),
-            ]
-            .spacing(20),
-        )
-    });
+    let rows = SHORTCUTS
+        .iter()
+        .fold(column![].spacing(10), |col, (keys, desc)| {
+            col.push(
+                row![
+                    text(*keys).size(16).width(Length::Fixed(90.0)),
+                    text(*desc).size(16),
+                ]
+                .spacing(20),
+            )
+        });
 
     center(
         container(column![title, rows].spacing(18))

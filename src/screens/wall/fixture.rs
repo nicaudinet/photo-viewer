@@ -15,10 +15,10 @@ use crate::core::library::{Library, RangeOp};
 use crate::core::tags;
 use crate::core::transfer::{Collision, TransferKind};
 
-use super::queue::{BatchKind, FileDone};
 use super::layout::{WallLayout, TILE_WIDTH, WALL_SPACING};
 use super::message::{Dir, WallMsg};
 use super::mouse::Click;
+use super::queue::{BatchKind, FileDone};
 use super::thumbs::ThumbState;
 use super::WallState;
 
@@ -159,4 +159,3 @@ pub(super) fn placements(layout: &WallLayout) -> Vec<(usize, usize, usize, f32)>
 
 /// Heights that lay out as columns `[[0, 3], [1, 5], [2, 4]]` at 3 columns.
 pub(super) const SPREAD: [f32; 6] = [200.0, 400.0, 200.0, 300.0, 200.0, 200.0];
-

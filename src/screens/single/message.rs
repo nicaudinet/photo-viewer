@@ -33,4 +33,3 @@ pub(crate) enum SingleMsg {
         result: Result<image::Handle, String>,
     },
 }
-

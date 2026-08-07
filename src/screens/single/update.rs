@@ -31,10 +31,7 @@ impl SingleState {
                 // out from under the single view would be the one thing this
                 // screen must never do.
                 Task::perform(
-                    tags::save_async(
-                        self.library.image_dir.clone(),
-                        self.library.tags.clone(),
-                    ),
+                    tags::save_async(self.library.image_dir.clone(), self.library.tags.clone()),
                     |result| Message::Single(SingleMsg::TagsSaved(result)),
                 )
             }
@@ -49,9 +46,7 @@ impl SingleState {
                     // The file changed on disk: re-decode it, unless the view
                     // has since moved to a different image. (Wall thumbnails
                     // are rebuilt on next entry, so none is stale here.)
-                    Ok(()) if self.library.current() == &path => {
-                        self.decode_current()
-                    }
+                    Ok(()) if self.library.current() == &path => self.decode_current(),
                     Ok(()) => Task::none(),
                     Err(e) => {
                         eprintln!("Rotate failed: {e}");
@@ -75,7 +70,6 @@ impl SingleState {
         }
     }
 
-
     /// Rotate the current image 90° (clockwise if `clockwise`, else anti-),
     /// writing the result back to its file off-thread. Ignored while a rotate
     /// of the same file is already running.
@@ -86,9 +80,7 @@ impl SingleState {
         let key = path.clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || {
-                    imaging::rotate_in_place(&path, clockwise)
-                })
+                tokio::task::spawn_blocking(move || imaging::rotate_in_place(&path, clockwise))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
@@ -101,7 +93,6 @@ impl SingleState {
         )
     }
 
-
     /// Claim the current path for a rotate, or `None` if one is already
     /// writing it — two concurrent read-modify-writes of the same file both
     /// read the pre-rotation pixels, so one of the two turns is lost.
@@ -109,15 +100,14 @@ impl SingleState {
         let path = self.library.current().clone();
         self.rotating.insert(path.clone()).then_some(path)
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::library::Library;
-    use iced::widget::image;
     use crate::screens::single::SingleState;
+    use iced::widget::image;
     use std::collections::HashSet;
 
     /// A single view over `n` images, pointed at the first.
@@ -174,7 +164,13 @@ mod tests {
     fn a_rotate_re_decodes_the_image_it_rotated() {
         let mut state = single(2);
         let path = state.library.current().clone();
-        assert!(decodes(&mut state, SingleMsg::Rotated { path, result: Ok(()) }));
+        assert!(decodes(
+            &mut state,
+            SingleMsg::Rotated {
+                path,
+                result: Ok(())
+            }
+        ));
     }
 
     #[test]
@@ -186,7 +182,10 @@ mod tests {
         // user just navigated off.
         assert!(!decodes(
             &mut state,
-            SingleMsg::Rotated { path, result: Ok(()) }
+            SingleMsg::Rotated {
+                path,
+                result: Ok(())
+            }
         ));
     }
 

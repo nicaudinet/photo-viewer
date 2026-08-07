@@ -148,8 +148,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("pv-tags-{tag}-{}-{n}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("pv-tags-{tag}-{}-{n}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         let images: Vec<PathBuf> = ["a.jpg", "b.jpg", "c.jpg"]
             .iter()

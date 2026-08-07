@@ -62,7 +62,11 @@ impl WallState {
 
     /// One file of a batch has landed: fold it in, refill the slot it freed,
     /// and finish up if it was the last.
-    pub(super) fn batch_progress(&mut self, path: PathBuf, result: Result<FileDone, String>) -> Task<Message> {
+    pub(super) fn batch_progress(
+        &mut self,
+        path: PathBuf,
+        result: Result<FileDone, String>,
+    ) -> Task<Message> {
         self.rotating.remove(&path);
         let Some(batch) = &mut self.batch else {
             return Task::none();
@@ -132,12 +136,12 @@ impl WallState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screens::wall::fixture::*;
-    use crate::screens::wall::select::WallMode;
     use crate::core::library::RangeOp;
     use crate::core::transfer::{Collision, TransferKind};
-    use std::path::PathBuf;
+    use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::WallMsg;
+    use crate::screens::wall::select::WallMode;
+    use std::path::PathBuf;
 
     #[test]
     fn rotate_in_normal_turns_only_the_cursor_image() {

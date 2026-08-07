@@ -6,8 +6,8 @@ use iced::Task;
 use crate::core::tags;
 use crate::Message;
 
-use super::queue::BatchKind;
 use super::message::WallMsg;
+use super::queue::BatchKind;
 use super::thumbs::ThumbState;
 use super::WallState;
 
@@ -55,7 +55,11 @@ impl WallState {
                 self.schedule()
             }
             WallMsg::Scrolled(offset) => {
-                self.scroll_y = if offset.is_finite() { offset.max(0.0) } else { 0.0 };
+                self.scroll_y = if offset.is_finite() {
+                    offset.max(0.0)
+                } else {
+                    0.0
+                };
                 // Reprioritise: the next freed slots go to the new viewport.
                 self.refocus();
                 self.schedule()
@@ -188,10 +192,10 @@ impl WallState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screens::wall::fixture::*;
-    use crate::screens::wall::select::WallMode;
     use crate::core::library::RangeOp;
+    use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::Dir;
+    use crate::screens::wall::select::WallMode;
 
     #[test]
     fn f_in_normal_favourites_only_the_cursor_image() {

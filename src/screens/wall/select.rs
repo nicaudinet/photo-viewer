@@ -53,7 +53,8 @@ impl WallState {
         let WallMode::Visual { anchor, op } = self.mode else {
             return Task::none();
         };
-        self.library.apply_range(anchor, self.library.paths.index(), op);
+        self.library
+            .apply_range(anchor, self.library.paths.index(), op);
         self.settle()
     }
 
@@ -104,11 +105,11 @@ impl WallState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screens::wall::fixture::*;
     use crate::core::library::RangeOp;
+    use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::Dir;
-    use crate::screens::wall::select::WallMode;
     use crate::screens::wall::message::WallMsg;
+    use crate::screens::wall::select::WallMode;
 
     #[test]
     fn a_committed_range_selects_the_whole_run() {

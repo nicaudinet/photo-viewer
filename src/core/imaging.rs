@@ -297,7 +297,7 @@ mod tests {
         let path = write_test_image(640, 480, "jpg");
         rotate_in_place(&path, true).unwrap();
         assert_eq!(thumb_height(&path, 300), Some(400.0)); // 300 * 640/480
-        // Back to the original orientation, and the thumbnail with it.
+                                                           // Back to the original orientation, and the thumbnail with it.
         rotate_in_place(&path, false).unwrap();
         assert_eq!(thumb_height(&path, 300), Some(225.0)); // 300 * 480/640
     }

@@ -14,8 +14,8 @@ use crate::Message;
 
 use super::layout::SEL_BORDER;
 use super::select::WallMode;
-use crate::screens::ICON_MARGIN;
 use super::WallState;
+use crate::screens::ICON_MARGIN;
 
 /// How far an accent ring is lifted off its palette colour (OKLCH lightness).
 /// On the dark theme this takes the primary `#5865F2` to `#8B8BFF`.
@@ -72,7 +72,11 @@ pub(crate) fn favourite_star() -> Element<'static, Message> {
 ///
 /// A shape as well as a colour, so neither selection nor favouriting is carried
 /// by hue alone.
-pub(super) fn corner_badge(symbol: &'static str, accent: Accent, side: Horizontal) -> Element<'static, Message> {
+pub(super) fn corner_badge(
+    symbol: &'static str,
+    accent: Accent,
+    side: Horizontal,
+) -> Element<'static, Message> {
     // The amber is light enough that white on it would not read.
     let fg = match accent {
         Accent::Favourite => Color::BLACK,
@@ -106,7 +110,12 @@ impl WallState {
     /// cursor ring is hidden in `Visual` — the leading edge of the painted
     /// range already shows where the cursor is, and a second highlight
     /// competing with the tint just reads as noise.
-    pub(super) fn tile_look(&self, index: usize, path: &std::path::Path, current: usize) -> TileLook {
+    pub(super) fn tile_look(
+        &self,
+        index: usize,
+        path: &std::path::Path,
+        current: usize,
+    ) -> TileLook {
         let selected = self.library.is_selected(path);
         let pending = match self.mode {
             WallMode::Visual { anchor, op } => {
@@ -179,11 +188,11 @@ pub(super) fn placeholder_style(theme: &Theme) -> container::Style {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screens::wall::fixture::*;
-    use std::path::PathBuf;
     use crate::core::library::RangeOp;
+    use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::Dir;
     use crate::screens::wall::message::WallMsg;
+    use std::path::PathBuf;
 
     #[test]
     fn the_cursor_ring_is_hidden_while_painting() {

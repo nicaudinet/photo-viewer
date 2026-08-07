@@ -96,8 +96,8 @@ impl WallState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::screens::wall::fixture::*;
     use crate::core::library::RangeOp;
+    use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::WallMsg;
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
         let _ = click(&mut state, 0, Modifiers::COMMAND);
         let _ = click(&mut state, 3, PLAIN); // select 3
         let _ = click(&mut state, 3, PLAIN); // double: deselect, opens
-        // Without clearing the record, this would read as another double.
+                                             // Without clearing the record, this would read as another double.
         assert!(!opens(click(&mut state, 3, PLAIN)));
         assert_eq!(selected(&state), vec![0, 3]);
     }

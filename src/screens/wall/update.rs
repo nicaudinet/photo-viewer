@@ -86,6 +86,11 @@ impl WallState {
             }
             WallMsg::ToggleFavourite => self.favourite(),
             WallMsg::ToggleFilter => self.toggle_filter(),
+            WallMsg::TagsSaved(Ok(())) => Task::none(),
+            WallMsg::TagsSaved(Err(e)) => {
+                eprintln!("Could not save tags: {e}");
+                Task::none()
+            }
             WallMsg::Escape => self.escape(),
             WallMsg::StartBatch { kind, paths } => self.start_batch(kind, paths),
             WallMsg::BatchProgress { path, result } => self.batch_progress(path, result),
@@ -161,7 +166,7 @@ impl WallState {
     pub(super) fn relaid(&mut self) -> Task<Message> {
         let save = Task::perform(
             tags::save_async(self.library.image_dir.clone(), self.library.tags.clone()),
-            Message::TagsSaved,
+            |result| Message::Wall(WallMsg::TagsSaved(result)),
         );
         Task::batch([self.resettled(), save, self.settle()])
     }

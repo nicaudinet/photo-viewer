@@ -8,10 +8,8 @@ use std::path::PathBuf;
 
 use iced::keyboard;
 
-use crate::core::library::RangeOp;
-use crate::core::transfer::TransferKind;
 use crate::screens::single::SingleMsg;
-use crate::screens::wall::{Dir, WallMsg};
+use crate::screens::wall::WallMsg;
 
 use super::destination::TransferPlan;
 
@@ -27,46 +25,11 @@ pub(crate) enum Message {
     WindowReady,
     /// A modifier key went down or up; remembered for the next click.
     ModifiersChanged(keyboard::Modifiers),
+    /// A raw key press, for [`super::keys`] to offer to the app and then to
+    /// whichever screen is live. The app has no opinion about most keys, so it
+    /// has no word for them either.
+    Key(keyboard::Event),
 
-    // Ambiguous shared keys: same key, different meaning per screen. The live
-    // screen isn't visible to `subscription`, so these stay neutral here and are
-    // dispatched to the current screen's update in `App::update`.
-    /// Arrows / `hjkl`: previous-next (single) or grid movement (wall).
-    Nav(Dir),
-    /// `r` / `Shift+R`: rotate the current image (single) or the selected
-    /// thumbnail (wall). Both write the file to disk.
-    Rotate {
-        clockwise: bool,
-    },
-    /// Enter: commit a painted range, else open the selected thumbnail (wall
-    /// only).
-    Activate,
-
-    // Selection keys. Meaningful only on the wall, but the subscription can't
-    // see which screen is live, so they are dispatched in `App::update`.
-    /// `v` / `x`: paint a range that adds to / removes from the selection.
-    Visual {
-        op: RangeOp,
-    },
-    /// `Space`: select or deselect the image under the cursor.
-    ToggleSelected,
-    /// `Cmd+A`.
-    SelectAll,
-    /// `i`.
-    InvertSelection,
-    /// `f`: favourite the selection (wall) or the current image (single).
-    ToggleFavourite,
-    /// `Shift+F`: show only the favourites, or show everything again.
-    ToggleFilter,
-    /// The tag store was written. Only ever reported when it wasn't.
-    TagsSaved(Result<(), String>),
-    /// `d`: ask before trashing the selection.
-    DeleteSelected,
-    /// `m` / `c`: send the selection to another folder. Opens the folder picker
-    /// first; nothing is written until the question that follows is answered.
-    Transfer {
-        kind: TransferKind,
-    },
     /// The folder picker closed, and the destination has been looked at.
     /// `None` if the picker was cancelled.
     TransferTarget(Option<TransferPlan>),
@@ -78,6 +41,8 @@ pub(crate) enum Message {
     },
     /// A key naming one of the answers on offer.
     ConfirmChoice(char),
+    /// Enter — take the first answer, which is always the safe one.
+    ConfirmDefault,
     /// `n` — decline, whatever was asked.
     ConfirmNo,
     /// The window resized: re-measure the wall's viewport if it is on screen.

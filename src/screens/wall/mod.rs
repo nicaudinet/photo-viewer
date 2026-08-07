@@ -16,6 +16,7 @@
 //! | [`layout`] | the masonry, as pure data |
 //! | [`navigate`] | moving the cursor and keeping it on screen |
 //! | [`select`] | [`WallMode`] and the transitions between modes |
+//! | [`keys`] | the wall's keyboard |
 //! | [`mouse`] | clicks on a thumbnail |
 //! | [`thumbs`] | the bounded decode scheduler |
 //! | [`rotate`] | rotating one image, and invalidating what it changed |
@@ -26,6 +27,7 @@
 
 mod batch;
 mod bar;
+mod keys;
 mod layout;
 mod message;
 mod mouse;
@@ -51,7 +53,8 @@ use iced::{Size, Task};
 use crate::core::library::Library;
 use crate::Message;
 
-pub(crate) use message::{Dir, WallMsg};
+pub(crate) use message::WallMsg;
+pub(crate) use keys::WallKey;
 pub(crate) use mouse::Click;
 pub(crate) use queue::BatchKind;
 pub(crate) use navigate::measure;

@@ -72,6 +72,8 @@ pub(crate) enum WallMsg {
         kind: BatchKind,
         paths: Vec<PathBuf>,
     },
+    /// The tag store was written. Only ever reported when it wasn't.
+    TagsSaved(Result<(), String>),
     /// One file of a batch finished.
     BatchProgress {
         path: PathBuf,

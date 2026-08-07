@@ -8,8 +8,7 @@ use iced::window::Mode;
 use iced::Task;
 
 use crate::core::library::IMAGE_EXTENSIONS;
-use crate::screens::single::SingleMsg;
-use crate::screens::wall::{Click, Dir, WallMsg};
+use crate::screens::wall::{Click, WallMsg};
 
 use super::{App, Message, Screen};
 
@@ -23,7 +22,7 @@ impl App {
                 message,
                 Message::ConfirmNo
                     | Message::ConfirmChoice(_)
-                    | Message::Activate
+                    | Message::ConfirmDefault
                     | Message::Escape
                     | Message::Quit
                     | Message::Removed { .. }
@@ -77,74 +76,16 @@ impl App {
                 iced::window::latest().and_then(|id| iced::window::set_mode(id, Mode::Windowed))
             }
 
-            // Shared keys: disambiguate by screen, then hand to that screen.
-            Message::Nav(dir) => match &mut self.screen {
-                // The single view is a flat sequence: only left/right mean
-                // anything there.
-                Screen::Single(s) => match dir {
-                    Dir::Left => s.update(SingleMsg::Prev, &mut self.generation),
-                    Dir::Right => s.update(SingleMsg::Next, &mut self.generation),
-                    Dir::Up | Dir::Down => Task::none(),
-                },
-                Screen::Wall(w) => w.update(WallMsg::Nav(dir)),
-                Screen::Empty => Task::none(),
-            },
-            Message::Rotate { clockwise } => match &mut self.screen {
-                Screen::Single(s) => {
-                    let msg = if clockwise {
-                        SingleMsg::RotateClockwise
-                    } else {
-                        SingleMsg::RotateAnticlockwise
-                    };
-                    s.update(msg, &mut self.generation)
-                }
-                Screen::Wall(w) => w.update(WallMsg::Rotate { clockwise }),
-                Screen::Empty => Task::none(),
-            },
-            // In the wall, Enter commits a painted range if one is in progress
-            // and otherwise opens whatever the ring is around; it means nothing
-            // on the other screens. With a question up it answers yes.
-            Message::Activate if self.confirm.is_some() => self.answer(None),
-            Message::Activate => match &mut self.screen {
-                Screen::Wall(w) if w.is_visual() => w.update(WallMsg::CommitVisual),
-                Screen::Wall(w) => {
-                    let index = w.library.paths.index();
-                    self.open_index(index)
-                }
-                _ => Task::none(),
-            },
+            // Offered to the app first, then to whichever screen is live.
+            Message::Key(event) => self.key(event),
 
-            // The one selection key the single view answers to as well — and
-            // there it applies to the current image alone, like everything on
-            // that screen.
-            Message::ToggleFavourite => match &mut self.screen {
-                Screen::Single(s) => s.update(SingleMsg::ToggleFavourite, &mut self.generation),
-                Screen::Wall(w) => w.update(WallMsg::ToggleFavourite),
-                Screen::Empty => Task::none(),
-            },
-            Message::ToggleFilter => self.wall_msg(WallMsg::ToggleFilter),
-            Message::TagsSaved(Ok(())) => Task::none(),
-            Message::TagsSaved(Err(e)) => {
-                eprintln!("Could not save tags: {e}");
-                Task::none()
-            }
-
-            Message::Visual { op } => self.wall_msg(WallMsg::EnterVisual { op }),
-            Message::ToggleSelected => self.wall_msg(WallMsg::ToggleCursor),
-            Message::SelectAll => self.wall_msg(WallMsg::SelectAll),
-            Message::InvertSelection => self.wall_msg(WallMsg::InvertSelection),
-
-            Message::DeleteSelected => {
-                self.ask_about_trash();
-                Task::none()
-            }
-            Message::Transfer { kind } => self.start_transfer(kind),
             // The picker was cancelled: nothing was asked, so nothing happens.
             Message::TransferTarget(None) => Task::none(),
             Message::TransferTarget(Some(plan)) => {
                 self.ask_about(plan);
                 Task::none()
             }
+            Message::ConfirmDefault => self.answer(None),
             Message::ConfirmChoice(key) => self.answer(Some(key)),
             Message::ConfirmNo => {
                 self.confirm = None;

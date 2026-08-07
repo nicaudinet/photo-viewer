@@ -1,65 +1,16 @@
-//! The single view: one fit-to-window image, with navigation and rotate.
-//!
-//! Every action here applies to the current image and nothing else — see
-//! `SELECT_MODE_PLAN.md`. That includes `f`: whatever the wall has selected,
-//! favouriting from this screen touches the photo on it and no other.
+//! Where a [`SingleMsg`] turns into state and tasks.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 
-use iced::widget::{image, Space, Stack};
-use iced::{ContentFit, Element, Length, Task};
+use iced::Task;
 
-use crate::core::library::Library;
+use crate::core::{imaging, tags};
 use crate::Message;
 
-/// Messages produced only while the single view is on screen. Routed to
-/// [`SingleState::update`] by `App::update`.
-#[derive(Debug, Clone)]
-pub(crate) enum SingleMsg {
-    Next,
-    Prev,
-    /// `r`: rotate the current image anticlockwise, writing it to disk.
-    RotateAnticlockwise,
-    /// `Shift+R`: rotate the current image clockwise, writing it to disk.
-    RotateClockwise,
-    /// `f`: favourite the current image — and, as with everything on this
-    /// screen, only the current image, whatever else is selected.
-    ToggleFavourite,
-    /// Result of a rotate: on success, re-decode the (now rotated) file.
-    /// Carries its own path — the view may have moved on while the write was
-    /// in flight.
-    Rotated {
-        path: PathBuf,
-        result: Result<(), String>,
-    },
-    /// A fit-to-window decode landed, tagged with the generation it began at.
-    LargeDecoded {
-        generation: u64,
-        result: Result<image::Handle, String>,
-    },
-}
-
-/// Single-view state: the library plus the current fit-to-window decode.
-pub(crate) struct SingleState {
-    pub(crate) library: Library,
-    /// Latest fit-to-window decode for the current path. `None` until the first
-    /// decode lands (the previous image stays on screen meanwhile).
-    large: Option<image::Handle>,
-    /// Paths with a rotate write in flight. Holding the key down would
-    /// otherwise race two read-modify-writes against the same file.
-    rotating: HashSet<PathBuf>,
-}
+use super::message::SingleMsg;
+use super::SingleState;
 
 impl SingleState {
-    pub(crate) fn new(library: Library) -> Self {
-        Self {
-            library,
-            large: None,
-            rotating: HashSet::new(),
-        }
-    }
-
     pub(crate) fn update(&mut self, msg: SingleMsg, generation: &mut u64) -> Task<Message> {
         match msg {
             SingleMsg::Next => {
@@ -74,18 +25,23 @@ impl SingleState {
             SingleMsg::RotateClockwise => self.rotate(true),
             SingleMsg::ToggleFavourite => {
                 let path = self.library.current().clone();
-                self.library.toggle_tag(crate::core::tags::FAVOURITE, &[path]);
+                self.library.toggle_tag(tags::FAVOURITE, &[path]);
                 // No `refilter` here: the wall owns which images are on show,
                 // and it re-derives that on entry. Dropping the current image
                 // out from under the single view would be the one thing this
                 // screen must never do.
                 Task::perform(
-                    crate::core::tags::save_async(
+                    tags::save_async(
                         self.library.image_dir.clone(),
                         self.library.tags.clone(),
                     ),
-                    Message::TagsSaved,
+                    |result| Message::Single(SingleMsg::TagsSaved(result)),
                 )
+            }
+            SingleMsg::TagsSaved(Ok(())) => Task::none(),
+            SingleMsg::TagsSaved(Err(e)) => {
+                eprintln!("Could not save tags: {e}");
+                Task::none()
             }
             SingleMsg::Rotated { path, result } => {
                 self.rotating.remove(&path);
@@ -119,22 +75,6 @@ impl SingleState {
         }
     }
 
-    /// Kick off an off-thread decode of the current image, tagged with a fresh
-    /// generation so an earlier in-flight decode can't overwrite it. Bumps the
-    /// caller's global generation counter.
-    pub(crate) fn decode_current(&self, generation: &mut u64) -> Task<Message> {
-        *generation += 1;
-        let generation = *generation;
-        let path = self.library.current().clone();
-        Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || crate::core::imaging::full(&path))
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
-            },
-            move |result| Message::Single(SingleMsg::LargeDecoded { generation, result }),
-        )
-    }
 
     /// Rotate the current image 90° (clockwise if `clockwise`, else anti-),
     /// writing the result back to its file off-thread. Ignored while a rotate
@@ -147,7 +87,7 @@ impl SingleState {
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
-                    crate::core::imaging::rotate_in_place(&path, clockwise)
+                    imaging::rotate_in_place(&path, clockwise)
                 })
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
@@ -161,6 +101,7 @@ impl SingleState {
         )
     }
 
+
     /// Claim the current path for a rotate, or `None` if one is already
     /// writing it — two concurrent read-modify-writes of the same file both
     /// read the pre-rotation pixels, so one of the two turns is lost.
@@ -169,32 +110,14 @@ impl SingleState {
         self.rotating.insert(path.clone()).then_some(path)
     }
 
-    pub(crate) fn view(&self) -> Element<'_, Message> {
-        let photo: Element<'_, Message> = match &self.large {
-            Some(handle) => image(handle.clone())
-                .content_fit(ContentFit::Contain)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-            None => Space::new()
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        };
-
-        // Same star, same corner as on the wall, so the two screens agree about
-        // what a favourite looks like.
-        if self.library.is_tagged(crate::core::tags::FAVOURITE, self.library.current()) {
-            Stack::with_children(vec![photo, super::wall::favourite_star()]).into()
-        } else {
-            photo
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::library::Library;
+    use crate::screens::single::SingleState;
+    use std::collections::HashSet;
 
     /// A single view over `n` images, pointed at the first.
     fn single(n: usize) -> SingleState {
@@ -282,4 +205,3 @@ mod tests {
         assert_eq!(state.claim_rotate(), Some(path));
     }
 }
-

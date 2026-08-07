@@ -133,9 +133,8 @@ impl Library {
     }
 
     /// How many photos the tile at `path` stands for. One, unless it is a
-    /// stack — which is what a confirmation has to count in, once there is a
-    /// stack to confirm against (phases 5 and 7).
-    #[allow(dead_code)]
+    /// stack — which is what the tile's count badge shows, and what a
+    /// confirmation has to count in.
     pub fn stack_size(&self, path: &Path) -> usize {
         self.grouping
             .as_ref()

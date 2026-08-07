@@ -196,17 +196,31 @@ wall, and the view pops.
 
 ## Tile rendering
 
-A stack draws as `widget::stack!` of three layers: two blank cards in the
-representative's aspect ratio, rotated about ±5° via `Rotation::Floating`, then
-the real thumbnail square on top. `Floating` keeps layout bounds, so the masonry
-does not reflow.
+A stack draws as `widget::stack!`: up to two blank cards filling the tile,
+rotated ±5° via `Rotation::Floating`, then the real thumbnail on top. `Floating`
+keeps layout bounds, so the masonry does not reflow.
+
+The cards do **not** overhang the tile, which phase 5 found out the hard way.
+iced clips a rotated image to its *unrotated* layout bounds, and a `Stack` gives
+every layer at most the size of its base layer, so a card can never be drawn
+outside the tile it sits in. Left at full size it would be clipped back to the
+photograph's own rect and then hidden behind it — an invisible fan. The
+photograph is therefore inset by 10px when it is a stack, and what shows of each
+card is the wedge between its leaning edge and that inset. Scaled rather than
+trimmed, so a stacked photo is the same shape as an unstacked one.
+
+Two cards at most, and only one behind a pair — a third says nothing the count
+badge does not, and a pile of two should look like two.
 
 Blank cards rather than real member thumbnails: members are near-duplicates by
 construction, so decoding two more of them buys an effect the eye cannot
-distinguish from a tint.
+distinguish from a tint. The card is a stretched single pixel, because rotation
+in iced belongs to images alone; its grey is baked in rather than taken from the
+palette for the same reason.
 
-A `×4` count badge sits in the top-right, using the existing `corner_badge`.
-The favourite star is on the left, so they do not collide.
+A `×4` count badge sits in the **bottom**-right, using the existing
+`corner_badge`. Top-right is the selection tick's and top-left the favourite
+star's, so a selected, favourited stack shows all three at once.
 
 ## Key routing
 

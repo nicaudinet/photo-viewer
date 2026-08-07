@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use iced::alignment::Horizontal;
+use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, container, image, scrollable, text, Column, Row, Space, Stack};
 use iced::{Background, Color, Element, Length, Theme};
 
@@ -12,7 +12,8 @@ use super::layout::{WallLayout, SEL_BORDER, THUMB_WIDTH, TILE_WIDTH, WALL_SPACIN
 use super::message::WallMsg;
 use super::navigate::WALL_ID;
 use super::tile::{
-    accent_color, corner_badge, favourite_star, placeholder_style, thumb_button_style, Accent,
+    accent_color, back_card, corner_badge, count_badge, fan_angles, fan_inset, favourite_star,
+    placeholder_style, thumb_button_style, Accent,
 };
 use super::WallState;
 
@@ -69,6 +70,45 @@ impl WallState {
         Row::with_children(columns).spacing(WALL_SPACING).into()
     }
 
+    /// The photograph itself, or the placeholder standing in until it decodes.
+    ///
+    /// `inset` pulls it in from the edges of its tile, leaving the band the
+    /// cards behind a stack show through. Scaled rather than trimmed, so a
+    /// stacked photo is the same shape as an unstacked one — only smaller — and
+    /// then centred back in the full tile so the two are drawn concentric.
+    fn photo_element<'a>(
+        &'a self,
+        path: &'a PathBuf,
+        height: f32,
+        inset: f32,
+    ) -> Element<'a, Message> {
+        let full = THUMB_WIDTH as f32;
+        let scale = (full - 2.0 * inset) / full;
+        let photo: Element<'a, Message> = match self.thumbs.get(path) {
+            Some(thumb) => image(thumb.handle.clone())
+                .width(Length::Fixed(full * scale))
+                .height(Length::Fixed(thumb.height as f32 * scale))
+                .into(),
+            None => container(text("Loading\u{2026}").size(14))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .width(Length::Fixed(full * scale))
+                .height(Length::Fixed(height * scale))
+                .style(placeholder_style)
+                .into(),
+        };
+
+        if inset == 0.0 {
+            return photo;
+        }
+        container(photo)
+            .width(Length::Fixed(full))
+            .height(Length::Fixed(height))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
+    }
+
     /// One thumbnail: image (or placeholder), clickable, decorated according to
     /// [`WallState::tile_look`].
     pub(super) fn thumb_element<'a>(
@@ -78,26 +118,23 @@ impl WallState {
         current: usize,
     ) -> Element<'a, Message> {
         let height = self.tile_height(path);
-        let inner: Element<'a, Message> = match self.thumbs.get(path) {
-            Some(thumb) => image(thumb.handle.clone())
-                .width(Length::Fixed(THUMB_WIDTH as f32))
-                .height(Length::Fixed(thumb.height as f32))
-                .into(),
-            None => container(text("Loading\u{2026}").size(14))
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .width(Length::Fixed(THUMB_WIDTH as f32))
-                .height(Length::Fixed(height))
-                .style(placeholder_style)
-                .into(),
-        };
-
         let look = self.tile_look(index, path, current);
+        let fan = fan_angles(look.stack);
+        // Room for the cards, taken out of the photograph rather than added to
+        // the tile: see `FAN_INSET` for why they cannot simply overhang.
+        let inset = fan_inset(look.stack);
 
         // Layers over the thumbnail, sized to it explicitly rather than left to
         // fill: a `Stack` takes its size from the first child, and the decoded
         // height and the header-derived one can differ by a pixel.
-        let mut layers: Vec<Element<'a, Message>> = vec![inner];
+        //
+        // The cards come first because they go behind, and they are what sizes
+        // the tile when there are any — the photograph is the smaller thing.
+        let mut layers: Vec<Element<'a, Message>> = fan
+            .into_iter()
+            .map(|degrees| back_card(height, degrees))
+            .collect();
+        layers.push(self.photo_element(path, height, inset));
         if let Some(accent) = look.tint {
             let alpha = look.tint_alpha;
             layers.push(
@@ -115,7 +152,17 @@ impl WallState {
             );
         }
         if look.badge {
-            layers.push(corner_badge("\u{2713}", Accent::Select, Horizontal::Right));
+            layers.push(corner_badge(
+                "\u{2713}".to_string(),
+                Accent::Select,
+                Horizontal::Right,
+                Vertical::Top,
+            ));
+        }
+        if look.stack > 1 {
+            // Bottom-right: the tick has the top-right corner, and a selected
+            // stack has to be able to say both things at once.
+            layers.push(count_badge(look.stack));
         }
         if look.star {
             // Opposite corner from the selection tick, so a favourite that is

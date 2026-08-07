@@ -1,18 +1,21 @@
 //! How one tile is decorated.
 //!
-//! Two independent channels, so a tile can say two things at once: the ring is
-//! where the cursor is, the tint and badge are what is selected.
+//! Independent channels, so a tile can say several things at once: the ring is
+//! where the cursor is, the tint and badge are what is selected, and the fanned
+//! cards and `×n` badge are how many photographs the tile stands for.
 
 use iced::alignment::{Horizontal, Vertical};
 use iced::theme::palette::lighten;
-use iced::widget::{button, container, text};
-use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
+use iced::widget::{button, container, image, text};
+use iced::{
+    Background, Border, Color, ContentFit, Element, Length, Radians, Rotation, Shadow, Theme,
+};
 
 use crate::core::library::{RangeOp, Selected};
 use crate::core::tags;
 use crate::Message;
 
-use super::layout::SEL_BORDER;
+use super::layout::{SEL_BORDER, THUMB_WIDTH};
 use super::select::WallMode;
 use super::WallState;
 use crate::screens::ICON_MARGIN;
@@ -28,6 +31,26 @@ pub(super) const TINT_PENDING: f32 = 0.18;
 /// one, so a partly-selected pile cannot be mistaken for a decided one.
 pub(super) const TINT_PARTIAL: f32 = 0.16;
 
+/// How far the cards behind a stack lean, in degrees. Small: enough that the
+/// corners show past the photograph, not so much that the pile looks dropped.
+const FAN_DEGREES: f32 = 5.0;
+/// How far the photograph is pulled in from the edge of its tile to leave room
+/// for the cards behind it. See [`fan_inset`].
+///
+/// A stack cannot simply overhang its tile. iced clips a rotated image to its
+/// *unrotated* layout bounds, and a `Stack` gives every layer at most the size
+/// of its base layer, so a card can never be drawn outside the tile it is in:
+/// left at full size it would be clipped back to the photograph's own rect and
+/// then hidden behind it. The pile is therefore made room for rather than
+/// allowed to spill — which also means it costs the masonry nothing, since the
+/// tile is exactly the size it always was.
+const FAN_INSET: f32 = 10.0;
+/// The colour of a blank card, and how solid it is drawn. Grey rather than
+/// paper-white so it does not glare on the dark theme, and slightly transparent
+/// so it settles behind the photograph instead of competing with it.
+const CARD_RGBA: [u8; 4] = [0x8a, 0x8a, 0x8e, 0xff];
+const CARD_OPACITY: f32 = 0.75;
+
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
 #[derive(Clone, Copy)]
@@ -37,6 +60,8 @@ pub(super) struct TileLook {
     pub(super) tint_alpha: f32,
     pub(super) badge: bool,
     pub(super) star: bool,
+    /// How many photos the tile stands for: one, or the depth of its stack.
+    pub(super) stack: usize,
 }
 
 /// The three things a tile can be saying, mapped to palette colours by
@@ -48,6 +73,9 @@ pub(super) enum Accent {
     Select,
     Remove,
     Favourite,
+    /// How deep a stack is, which is a fact about the folder rather than
+    /// anything the user has done to it — so, alone among these, neutral.
+    Stack,
 }
 
 pub(super) fn accent_color(theme: &Theme, accent: Accent) -> Color {
@@ -61,6 +89,7 @@ pub(super) fn accent_color(theme: &Theme, accent: Accent) -> Color {
         // Amber, from no palette slot — the four palette roles are spoken for,
         // and a favourite has to be told apart from a selection at a glance.
         Accent::Favourite => Color::from_rgb(0.98, 0.75, 0.18),
+        Accent::Stack => lighten(palette.secondary.base.color, SEL_LIGHTEN),
     }
 }
 
@@ -68,7 +97,23 @@ pub(super) fn accent_color(theme: &Theme, accent: Accent) -> Color {
 /// two screens disagreeing about what a favourite looks like would be worse
 /// than either choice.
 pub(crate) fn favourite_star() -> Element<'static, Message> {
-    corner_badge("\u{2605}", Accent::Favourite, Horizontal::Left)
+    corner_badge(
+        "\u{2605}".to_string(),
+        Accent::Favourite,
+        Horizontal::Left,
+        Vertical::Top,
+    )
+}
+
+/// How many photos a stack stands for, in the corner the other two marks leave
+/// free — the star is top-left and the selection tick top-right.
+pub(super) fn count_badge(size: usize) -> Element<'static, Message> {
+    corner_badge(
+        format!("\u{d7}{size}"),
+        Accent::Stack,
+        Horizontal::Right,
+        Vertical::Bottom,
+    )
 }
 
 /// A symbol in a rounded pill in one corner of a tile.
@@ -76,9 +121,10 @@ pub(crate) fn favourite_star() -> Element<'static, Message> {
 /// A shape as well as a colour, so neither selection nor favouriting is carried
 /// by hue alone.
 pub(super) fn corner_badge(
-    symbol: &'static str,
+    symbol: String,
     accent: Accent,
     side: Horizontal,
+    edge: Vertical,
 ) -> Element<'static, Message> {
     // The amber is light enough that white on it would not read.
     let fg = match accent {
@@ -100,16 +146,80 @@ pub(super) fn corner_badge(
     .width(Length::Fill)
     .height(Length::Fill)
     .align_x(side)
-    .align_y(Vertical::Top)
+    .align_y(edge)
     .padding(ICON_MARGIN)
     .into()
+}
+
+/// One blank card behind a stack's thumbnail, filling the tile and leaning
+/// `degrees`. What shows of it is the wedge between its edge and the inset
+/// photograph, which is wider at one pair of corners than the other — the whole
+/// of the effect.
+///
+/// A stretched single pixel rather than a styled container, because rotation in
+/// iced belongs to images alone — which also means the colour is baked into the
+/// pixel instead of coming from the palette. A neutral grey is the one choice
+/// that reads against a light theme and a dark one, and the card is a backdrop:
+/// all it has to do is not be the photograph.
+///
+/// [`Rotation::Floating`] keeps the layout bounds it was given, so a leaning
+/// card never reflows the masonry around it.
+pub(super) fn back_card(height: f32, degrees: f32) -> Element<'static, Message> {
+    image(card_pixel())
+        .width(Length::Fixed(THUMB_WIDTH as f32))
+        .height(Length::Fixed(height))
+        .content_fit(ContentFit::Fill)
+        // Nothing to interpolate in one pixel, and nearest keeps the edges
+        // crisp where the card leans out from behind the photo.
+        .filter_method(image::FilterMethod::Nearest)
+        .rotation(Rotation::Floating(Radians(degrees.to_radians())))
+        .opacity(CARD_OPACITY)
+        .into()
+}
+
+/// The one pixel every card is drawn from.
+///
+/// Built once and cloned. `Handle::from_rgba` mints a fresh id per call, so a
+/// handle built per tile would upload a new texture for every stack on every
+/// frame.
+fn card_pixel() -> image::Handle {
+    thread_local! {
+        static CARD: image::Handle = image::Handle::from_rgba(1, 1, CARD_RGBA.to_vec());
+    }
+    CARD.with(image::Handle::clone)
+}
+
+/// How far the cards behind a stack lean, and how many of them there are.
+///
+/// Two at most however deep the pile is: a third adds no information the `×n`
+/// badge is not already giving, and every card is one more thing leaning into
+/// the tiles beside it. A pair of photos gets a single card, so that what is
+/// drawn matches what is there.
+pub(super) fn fan_angles(size: usize) -> Vec<f32> {
+    match size {
+        0 | 1 => Vec::new(),
+        2 => vec![FAN_DEGREES],
+        // Opposite ways, which is what makes it read as a pile pushed about
+        // rather than as one photo printed twice.
+        _ => vec![-FAN_DEGREES, FAN_DEGREES],
+    }
+}
+
+/// How far in from its tile the photograph of a stack of `size` is drawn.
+pub(super) fn fan_inset(size: usize) -> f32 {
+    if fan_angles(size).is_empty() {
+        0.0
+    } else {
+        FAN_INSET
+    }
 }
 
 impl WallState {
     /// How one tile is decorated.
     ///
-    /// Two independent channels, so a tile can say two things at once: the ring
-    /// is where the cursor is, the tint and badge are what is selected. The
+    /// Independent channels, so a tile can say several things at once: the
+    /// ring is where the cursor is, the tint and badge are what is selected,
+    /// and `stack` is how many photographs it stands for. The
     /// cursor ring is hidden in `Visual` — the leading edge of the painted
     /// range already shows where the cursor is, and a second highlight
     /// competing with the tint just reads as noise.
@@ -161,6 +271,7 @@ impl WallState {
             // Redundant while the wall is filtered to the favourites — every
             // tile would carry one, which says nothing.
             star: self.library.filter.is_none() && self.library.is_tagged(tags::FAVOURITE, path),
+            stack: self.library.stack_size(path),
         }
     }
 }
@@ -254,5 +365,64 @@ mod tests {
         assert_eq!(look.ring, None);
         assert_eq!(look.tint, None);
         assert!(!look.badge);
+    }
+
+    // --- Stacks ---
+
+    #[test]
+    fn a_tile_says_how_many_photos_it_stands_for() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        assert_eq!(state.tile_look(0, &paths[0], 0).stack, 3);
+    }
+
+    #[test]
+    fn a_photo_on_its_own_stands_for_one() {
+        let state = wall(&[200.0; 6], 1);
+        let path = state.library.current().clone();
+        // Which is what keeps the cards and the badge off an ungrouped wall:
+        // both are drawn from this number.
+        assert_eq!(state.tile_look(0, &path, 0).stack, 1);
+        assert!(fan_angles(1).is_empty());
+    }
+
+    #[test]
+    fn a_pair_of_photos_shows_one_card() {
+        // Two photos, two rectangles: a second card would draw a third photo
+        // that is not there.
+        assert_eq!(fan_angles(2), vec![FAN_DEGREES]);
+    }
+
+    #[test]
+    fn only_a_stack_makes_room_for_cards() {
+        // A lone photograph fills its tile exactly as it did before stacks
+        // existed, so grouping never changes the size of anything that is not
+        // a stack.
+        assert_eq!(fan_inset(1), 0.0);
+        assert!(fan_inset(2) > 0.0);
+    }
+
+    #[test]
+    fn a_deeper_pile_shows_two_cards_leaning_opposite_ways() {
+        assert_eq!(fan_angles(3), vec![-FAN_DEGREES, FAN_DEGREES]);
+        // However deep it gets: past two, the `\u{d7}n` badge is what says how
+        // many, and more cards only lean further into the neighbouring tiles.
+        assert_eq!(fan_angles(40), fan_angles(3));
+    }
+
+    #[test]
+    fn a_half_selected_stack_is_tinted_but_not_badged() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        let paths: Vec<PathBuf> = state.library.paths.iter().cloned().collect();
+        let members = state.library.members(&paths[0]);
+        state.library.selection.insert(members[1].clone());
+
+        let look = state.tile_look(0, &paths[0], 0);
+        assert_eq!(look.tint_alpha, TINT_PARTIAL);
+        // Half a pile is not a decision the badge can state.
+        assert!(!look.badge);
+        assert_eq!(look.ring, Some(Accent::Cursor));
     }
 }

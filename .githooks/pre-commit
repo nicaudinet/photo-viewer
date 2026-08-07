@@ -1,0 +1,29 @@
+#!/bin/sh
+# Refuse a commit that would put formatting drift back into the tree.
+#
+# Checks the whole tree rather than just the staged files: it is the same thing
+# `cargo fmt --check` reports, and there is no partial-staging case to get
+# subtly wrong. Only rustfmt runs here — a hook that takes longer than a moment
+# is a hook people start bypassing.
+#
+# Bypass deliberately with:  git commit --no-verify
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo is not on PATH; skipping the rustfmt check" >&2
+    exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+unformatted=$(cargo fmt --check 2>/dev/null \
+    | sed -n 's/^Diff in \(.*\):[0-9]*:$/\1/p' \
+    | sed "s|^$root/||" \
+    | sort -u)
+
+if [ -n "$unformatted" ]; then
+    echo "pre-commit: rustfmt would rewrite these files:" >&2
+    echo "$unformatted" | sed 's/^/    /' >&2
+    echo >&2
+    echo "Run 'cargo fmt', stage the result, and commit again." >&2
+    echo "To commit anyway: git commit --no-verify" >&2
+    exit 1
+fi

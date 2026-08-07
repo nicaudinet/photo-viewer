@@ -251,7 +251,7 @@ The tag write is the easy half. The work is honouring orientation on read:
 - **`thumb_height` must keep matching `thumbnail` exactly** — the existing
   invariant (and its test) that stops the wall shifting when a decode lands.
   Orientation has to be applied identically on both sides.
-- **Writing the tag.** Done in `src/exif.rs` with no new dependency, contrary to
+- **Writing the tag.** Done in `src/core/exif.rs` with no new dependency, contrary to
   the original sketch below. `little_exif` pulls six crates (brotli, quick-xml,
   crc, …) and re-serialises the whole EXIF block to change two bytes. The risk
   in editing EXIF is that moving bytes inside the TIFF block invalidates every
@@ -379,7 +379,7 @@ Delivered as:
   carry it already) rather than inverting each image, because inverting a mixed
   selection produces a differently-mixed one that nobody can predict.
 - **`Shift+F` filters the wall to the favourites.**
-- **`src/tags.rs`**: `BTreeMap<String, HashSet<PathBuf>>`, one file per tag under
+- **`src/core/tags.rs`**: `BTreeMap<String, HashSet<PathBuf>>`, one file per tag under
   `<image_dir>/.photo-viewer/tags/`. Only `favourite` is reachable from the
   keyboard; the store already handles the rest, which is the general-tags half
   of the note above. Entries are **file names, not absolute paths** as the old

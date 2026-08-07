@@ -196,7 +196,27 @@ cargo run -- [path/to/image/or/directory]   # launch (a file opens single view, 
 cargo build
 cargo clippy
 cargo test                                   # domain + platform unit tests
+cargo fmt                                    # the tree is kept rustfmt-clean
 ```
+
+### Git hooks
+
+The repo carries a pre-commit hook that refuses a commit which would leave the
+tree unformatted. Hooks are not installed by cloning, so point git at them
+once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Worth setting at the same time, so `git blame` skips the tree-wide reformat
+rather than attributing lines to it:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+Bypass the hook for a deliberate exception with `git commit --no-verify`.
 
 ## Run
 
@@ -218,7 +238,7 @@ menu, and lets you set it as the default viewer for an image type via
 **Get Info > Open with > Change All**.
 
 Double-clicking or "Open With" delivers the file as a macOS
-`kAEOpenDocuments` Apple Event (handled in `src/platform.rs`), not on argv.
+`kAEOpenDocuments` Apple Event (handled in `src/core/platform.rs`), not on argv.
 
 To build the bundle without installing:
 

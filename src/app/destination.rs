@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 
 use iced::Task;
 
-use crate::core::transfer::{self, TransferKind};
+use crate::core::transfer::{self, Collision, TransferKind};
+use crate::screens::wall::{BatchKind, WallMsg};
 
+use super::confirm::{Choice, Confirm};
 use super::{App, Message, Screen};
 
 /// A move or copy that has been aimed at a folder but not yet agreed to.
@@ -97,4 +99,83 @@ impl App {
             Message::TransferTarget,
         )
     }
+
+    /// Turn a destination the user picked into the question to ask about it.
+    pub(super) fn ask_about(&mut self, plan: TransferPlan) {
+        let folder = folder_name(&plan.dest);
+        if plan.same_dir {
+            // Nothing to do, and every file would "clash" with itself — so this
+            // is a statement rather than a question.
+            self.confirm = Some(Confirm {
+                prompt: format!("Those photos are already in {folder}."),
+                detail: None,
+                choices: Vec::new(),
+            });
+            return;
+        }
+
+        let count = plan.paths.len();
+        let noun = if count == 1 { "photo" } else { "photos" };
+        let prompt = format!("{} {count} {noun} to {folder}?", plan.kind.word());
+
+        let mut detail = Vec::new();
+        if plan.collisions > 0 {
+            let (n, verb) = (
+                plan.collisions,
+                if plan.collisions == 1 { "is" } else { "are" },
+            );
+            detail.push(format!("{n} of them {verb} already there."));
+        }
+        if plan.inside_library && plan.kind == TransferKind::Move {
+            detail.push("They will leave the wall: the folder scan is not recursive.".to_string());
+        }
+
+        // With clashes there is no honest yes/no: the answer *is* the policy,
+        // chosen once and applied to every file, so nothing is written before
+        // the user has said what should happen to the ones already there.
+        let choices = if plan.collisions > 0 {
+            vec![
+                Choice {
+                    key: 's',
+                    label: "skip those",
+                    message: transfer_message(&plan, Collision::Skip),
+                },
+                Choice {
+                    key: 'k',
+                    label: "keep both",
+                    message: transfer_message(&plan, Collision::KeepBoth),
+                },
+                Choice {
+                    key: 'o',
+                    label: "overwrite",
+                    message: transfer_message(&plan, Collision::Overwrite),
+                },
+            ]
+        } else {
+            vec![Choice {
+                key: 'y',
+                label: "yes",
+                message: transfer_message(&plan, Collision::Skip),
+            }]
+        };
+
+        self.confirm = Some(Confirm {
+            prompt,
+            detail: (!detail.is_empty()).then(|| detail.join("\n")),
+            choices,
+        });
+    }
+}
+
+/// What picking `collision` on `plan` sends: the wall's own batch runner, over
+/// exactly the files the question named.
+fn transfer_message(plan: &TransferPlan, collision: Collision) -> Message {
+    Message::Wall(WallMsg::StartBatch {
+        kind: BatchKind::Transfer {
+            kind: plan.kind,
+            dest: plan.dest.clone(),
+            collision,
+        },
+        paths: plan.paths.clone(),
+    })
 }

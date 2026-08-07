@@ -91,6 +91,7 @@ impl App {
                 self.confirm = None;
                 Task::none()
             }
+            Message::Trash(paths) => self.trash(paths),
             Message::Removed { gone, failed } => self.removed(gone, failed),
             Message::WallMeasure => match &self.screen {
                 Screen::Wall(_) => crate::screens::wall::measure(),

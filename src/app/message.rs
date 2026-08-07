@@ -33,6 +33,9 @@ pub(crate) enum Message {
     /// The folder picker closed, and the destination has been looked at.
     /// `None` if the picker was cancelled.
     TransferTarget(Option<TransferPlan>),
+    /// Trash these files. Named by the question the user answered, not re-read
+    /// from the selection, so what happens is what they were shown.
+    Trash(Vec<PathBuf>),
     /// Images have left the library's folder — trashed, or moved elsewhere.
     /// Carries what actually went, so a failure leaves its image on the wall.
     Removed {

@@ -29,7 +29,6 @@ use std::path::PathBuf;
 
 use iced::{keyboard, Task};
 
-use crate::screens::wall::WallMsg;
 
 pub(crate) use message::Message;
 pub(crate) use screen::Screen;
@@ -81,16 +80,6 @@ impl App {
             None => Task::none(),
         };
         (app, task)
-    }
-
-    /// Hand a message to the wall, or drop it if the wall isn't on screen.
-    /// Selection lives on the wall alone: the single view has no selection to
-    /// show, so acting on one from there could only ever surprise.
-    pub(super) fn wall_msg(&mut self, msg: WallMsg) -> Task<Message> {
-        match &mut self.screen {
-            Screen::Wall(w) => w.update(msg),
-            _ => Task::none(),
-        }
     }
 
     pub(crate) fn title(&self) -> String {

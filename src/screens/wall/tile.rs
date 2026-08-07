@@ -8,8 +8,8 @@ use iced::theme::palette::lighten;
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
 
-use crate::library::RangeOp;
-use crate::tags;
+use crate::core::library::RangeOp;
+use crate::core::tags;
 use crate::Message;
 
 use super::layout::SEL_BORDER;
@@ -181,7 +181,7 @@ mod tests {
     use super::*;
     use crate::screens::wall::fixture::*;
     use std::path::PathBuf;
-    use crate::library::RangeOp;
+    use crate::core::library::RangeOp;
     use crate::screens::wall::message::Dir;
     use crate::screens::wall::message::WallMsg;
 

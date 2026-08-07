@@ -3,7 +3,7 @@
 
 use iced::Task;
 
-use crate::tags;
+use crate::core::tags;
 use crate::Message;
 
 use super::queue::BatchKind;
@@ -185,7 +185,7 @@ mod tests {
     use super::*;
     use crate::screens::wall::fixture::*;
     use crate::screens::wall::select::WallMode;
-    use crate::library::RangeOp;
+    use crate::core::library::RangeOp;
     use crate::screens::wall::message::Dir;
 
     #[test]

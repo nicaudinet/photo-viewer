@@ -6,7 +6,7 @@ use iced::alignment::Vertical;
 use iced::widget::{container, text, Row, Space};
 use iced::{Background, Border, Element, Length, Theme};
 
-use crate::library::RangeOp;
+use crate::core::library::RangeOp;
 use crate::Message;
 
 use super::select::WallMode;
@@ -118,7 +118,7 @@ pub(super) fn mode_bar_style(theme: &Theme) -> container::Style {
 mod tests {
     use crate::screens::wall::fixture::*;
     use crate::screens::wall::message::WallMsg;
-    use crate::library::RangeOp;
+    use crate::core::library::RangeOp;
     use crate::screens::wall::message::Dir;
 
     #[test]

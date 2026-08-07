@@ -48,7 +48,7 @@ use std::time::Instant;
 
 use iced::{Size, Task};
 
-use crate::library::Library;
+use crate::core::library::Library;
 use crate::Message;
 
 pub(crate) use message::{Dir, WallMsg};

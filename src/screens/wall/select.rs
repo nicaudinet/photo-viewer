@@ -6,7 +6,7 @@
 
 use iced::Task;
 
-use crate::library::RangeOp;
+use crate::core::library::RangeOp;
 use crate::Message;
 
 use super::WallState;
@@ -105,7 +105,7 @@ impl WallState {
 mod tests {
     use super::*;
     use crate::screens::wall::fixture::*;
-    use crate::library::RangeOp;
+    use crate::core::library::RangeOp;
     use crate::screens::wall::message::Dir;
     use crate::screens::wall::select::WallMode;
     use crate::screens::wall::message::WallMsg;

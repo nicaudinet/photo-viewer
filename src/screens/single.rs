@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use iced::widget::{image, Space, Stack};
 use iced::{ContentFit, Element, Length, Task};
 
-use crate::library::Library;
+use crate::core::library::Library;
 use crate::Message;
 
 /// Messages produced only while the single view is on screen. Routed to
@@ -74,13 +74,13 @@ impl SingleState {
             SingleMsg::RotateClockwise => self.rotate(true),
             SingleMsg::ToggleFavourite => {
                 let path = self.library.current().clone();
-                self.library.toggle_tag(crate::tags::FAVOURITE, &[path]);
+                self.library.toggle_tag(crate::core::tags::FAVOURITE, &[path]);
                 // No `refilter` here: the wall owns which images are on show,
                 // and it re-derives that on entry. Dropping the current image
                 // out from under the single view would be the one thing this
                 // screen must never do.
                 Task::perform(
-                    crate::tags::save_async(
+                    crate::core::tags::save_async(
                         self.library.image_dir.clone(),
                         self.library.tags.clone(),
                     ),
@@ -128,7 +128,7 @@ impl SingleState {
         let path = self.library.current().clone();
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || crate::imaging::full(&path))
+                tokio::task::spawn_blocking(move || crate::core::imaging::full(&path))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
             },
@@ -147,7 +147,7 @@ impl SingleState {
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
-                    crate::imaging::rotate_in_place(&path, clockwise)
+                    crate::core::imaging::rotate_in_place(&path, clockwise)
                 })
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
@@ -184,7 +184,7 @@ impl SingleState {
 
         // Same star, same corner as on the wall, so the two screens agree about
         // what a favourite looks like.
-        if self.library.is_tagged(crate::tags::FAVOURITE, self.library.current()) {
+        if self.library.is_tagged(crate::core::tags::FAVOURITE, self.library.current()) {
             Stack::with_children(vec![photo, super::wall::favourite_star()]).into()
         } else {
             photo
@@ -201,10 +201,10 @@ mod tests {
         let files: Vec<PathBuf> = (0..n).map(|i| PathBuf::from(format!("{i}.jpg"))).collect();
         SingleState::new(Library {
             all: files.clone(),
-            paths: crate::pointed_list::PointedList::new(files).unwrap(),
+            paths: crate::core::pointed_list::PointedList::new(files).unwrap(),
             image_dir: PathBuf::from("/imgs"),
             selection: HashSet::new(),
-            tags: crate::tags::Tags::new(),
+            tags: crate::core::tags::Tags::new(),
             filter: None,
         })
     }

@@ -2,7 +2,7 @@
 //! user's selection within it, and the tags over it.
 //!
 //! Favourites used to be a hard-coded set here with a cache file of its own.
-//! It is now one tag among however many (see [`crate::tags`]) applied to a
+//! It is now one tag among however many (see [`crate::core::tags`]) applied to a
 //! selection, and the filter that shows only tagged images narrows `paths`
 //! rather than narrowing where thumbnails are drawn — see
 //! `SELECT_MODE_PLAN.md` phase 6 for why that difference matters.
@@ -12,8 +12,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::pointed_list::PointedList;
-use crate::tags::{self, Tags};
+use crate::core::pointed_list::PointedList;
+use crate::core::tags::{self, Tags};
 
 /// Extensions we treat as images (compared case-insensitively, without the dot).
 pub const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
@@ -399,7 +399,7 @@ mod tests {
         lib.paths.iter().cloned().collect()
     }
 
-    const FAV: &str = crate::tags::FAVOURITE;
+    const FAV: &str = crate::core::tags::FAVOURITE;
 
     /// The selection as sorted paths, for order-independent comparison.
     fn selected(lib: &Library) -> Vec<PathBuf> {

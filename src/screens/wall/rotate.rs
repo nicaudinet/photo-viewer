@@ -90,7 +90,7 @@ impl WallState {
                 .insert(path.clone(), (width * width / height).round().max(1.0));
         }
         Task::perform(
-            crate::imaging::thumb_heights_async(vec![path], THUMB_WIDTH),
+            crate::core::imaging::thumb_heights_async(vec![path], THUMB_WIDTH),
             |heights| Message::Wall(WallMsg::RatiosLoaded(heights)),
         )
     }

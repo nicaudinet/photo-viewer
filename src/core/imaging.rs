@@ -9,7 +9,7 @@
 //! ## Orientation
 //!
 //! JPEGs are rotated by rewriting one EXIF tag rather than by turning pixels
-//! (see [`crate::exif`]), so every path that reads an image has to apply that
+//! (see [`crate::core::exif`]), so every path that reads an image has to apply that
 //! tag — including [`thumb_height`], which reads no pixels at all: orientations
 //! 5 to 8 swap width and height, and the wall's masonry is laid out from the
 //! height it reports.
@@ -166,8 +166,8 @@ pub(crate) fn full(path: &Path) -> Result<image::Handle, String> {
 pub(crate) fn rotate_in_place(path: &Path, clockwise: bool) -> Result<(), String> {
     if is_jpeg(path) {
         let current = orientation(path).to_exif();
-        let turned = crate::exif::rotate_orientation(current, clockwise);
-        return crate::exif::write_orientation(path, turned);
+        let turned = crate::core::exif::rotate_orientation(current, clockwise);
+        return crate::core::exif::write_orientation(path, turned);
     }
 
     let img = ::image::open(path).map_err(|e| e.to_string())?;

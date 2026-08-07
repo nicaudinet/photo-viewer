@@ -44,7 +44,7 @@ impl WallState {
     pub(super) fn load_ratios(&self) -> Task<Message> {
         let paths: Vec<PathBuf> = self.library.paths.iter().cloned().collect();
         Task::perform(
-            crate::imaging::thumb_heights_async(paths, THUMB_WIDTH),
+            crate::core::imaging::thumb_heights_async(paths, THUMB_WIDTH),
             |heights| Message::Wall(WallMsg::RatiosLoaded(heights)),
         )
     }
@@ -76,7 +76,7 @@ impl WallState {
                 self.in_flight.insert(path.clone());
                 let key = path.clone();
                 Task::perform(
-                    crate::imaging::thumbnail_async(path, THUMB_WIDTH),
+                    crate::core::imaging::thumbnail_async(path, THUMB_WIDTH),
                     move |result| {
                         Message::Wall(WallMsg::ThumbDecoded {
                             path: key.clone(),

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use iced::keyboard::Modifiers;
 use iced::Task;
 
-use crate::library::RangeOp;
+use crate::core::library::RangeOp;
 use crate::Message;
 
 use super::select::WallMode;
@@ -97,7 +97,7 @@ impl WallState {
 mod tests {
     use super::*;
     use crate::screens::wall::fixture::*;
-    use crate::library::RangeOp;
+    use crate::core::library::RangeOp;
     use crate::screens::wall::message::WallMsg;
 
     #[test]

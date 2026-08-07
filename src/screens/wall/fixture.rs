@@ -11,9 +11,9 @@ use iced::keyboard::Modifiers;
 use iced::widget::image;
 use iced::Size;
 
-use crate::library::{Library, RangeOp};
-use crate::tags;
-use crate::transfer::{Collision, TransferKind};
+use crate::core::library::{Library, RangeOp};
+use crate::core::tags;
+use crate::core::transfer::{Collision, TransferKind};
 
 use super::queue::{BatchKind, FileDone};
 use super::layout::{WallLayout, TILE_WIDTH, WALL_SPACING};
@@ -33,10 +33,10 @@ pub(super) fn wall(heights: &[f32], col_count: usize) -> WallState {
     let files = paths(heights.len());
     let library = Library {
         all: files.clone(),
-        paths: crate::pointed_list::PointedList::new(files.clone()).unwrap(),
+        paths: crate::core::pointed_list::PointedList::new(files.clone()).unwrap(),
         image_dir: PathBuf::from("/wall"),
         selection: HashSet::new(),
-        tags: crate::tags::Tags::new(),
+        tags: crate::core::tags::Tags::new(),
         filter: None,
     };
     let mut state = WallState::new(library);

@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use crate::transfer::{Collision, TransferKind};
+use crate::core::transfer::{Collision, TransferKind};
 
 /// The operations a selection can be put through.
 #[derive(Debug, Clone)]

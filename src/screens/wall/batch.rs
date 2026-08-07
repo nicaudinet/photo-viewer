@@ -120,8 +120,8 @@ mod tests {
     use super::*;
     use crate::screens::wall::fixture::*;
     use crate::screens::wall::select::WallMode;
-    use crate::library::RangeOp;
-    use crate::transfer::{Collision, TransferKind};
+    use crate::core::library::RangeOp;
+    use crate::core::transfer::{Collision, TransferKind};
     use std::path::PathBuf;
     use crate::screens::wall::message::WallMsg;
 

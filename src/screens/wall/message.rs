@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use iced::widget::image;
 use iced::Size;
 
-use crate::library::RangeOp;
+use crate::core::library::RangeOp;
 
 use super::queue::{BatchKind, FileDone};
 

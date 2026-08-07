@@ -30,9 +30,6 @@ pub struct Grouping {
 impl Grouping {
     /// Grouping over `prints`, at the middle rung of the ladder. Empty until
     /// [`rebuild`](Self::rebuild) is handed a list of photos.
-    ///
-    /// Nothing outside the tests builds one until `g` exists (phase 4).
-    #[allow(dead_code)]
     pub fn new(prints: HashMap<PathBuf, Fingerprint>) -> Self {
         Self {
             prints,
@@ -50,8 +47,7 @@ impl Grouping {
         self.threshold = threshold;
     }
 
-    /// How many stacks there are, for the mode bar — which grows one in phase 4.
-    #[allow(dead_code)]
+    /// How many stacks there are, for the mode bar.
     pub fn len(&self) -> usize {
         self.stacks.len()
     }

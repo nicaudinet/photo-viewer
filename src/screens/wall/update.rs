@@ -90,6 +90,14 @@ impl WallState {
             }
             WallMsg::ToggleFavourite => self.favourite(),
             WallMsg::ToggleFilter => self.toggle_filter(),
+            WallMsg::ToggleGrouping => self.toggle_grouping(),
+            WallMsg::Fingerprinted { path, entry } => self.fingerprinted(path, entry),
+            WallMsg::FingerprintsSaved(Ok(())) => Task::none(),
+            WallMsg::FingerprintsSaved(Err(e)) => {
+                eprintln!("Could not save fingerprints: {e}");
+                Task::none()
+            }
+            WallMsg::Retune { looser } => self.retune(looser),
             WallMsg::TagsSaved(Ok(())) => Task::none(),
             WallMsg::TagsSaved(Err(e)) => {
                 eprintln!("Could not save tags: {e}");
@@ -107,9 +115,11 @@ impl WallState {
     /// Ignored while painting a range, for the same reason `Space` is: the
     /// range has no committed meaning yet, so there is no honest answer to
     /// "which images?". Finish or cancel it first. Also ignored while a batch
-    /// is already running, so two batches can't fight over the same files.
+    /// is already running, so two batches can't fight over the same files —
+    /// and while a fingerprint pass is, because rotating a photo is exactly
+    /// the edit that changes what its hash should say.
     pub(super) fn rotate(&mut self, clockwise: bool) -> Task<Message> {
-        if self.is_visual() || self.batch.is_some() {
+        if self.is_visual() || self.batch.is_some() || self.hashing.is_some() {
             return Task::none();
         }
         if let Some(selected) = self.operable_selection() {

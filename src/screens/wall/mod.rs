@@ -20,6 +20,7 @@
 //! | [`mouse`] | clicks on a thumbnail |
 //! | [`thumbs`] | the bounded decode scheduler |
 //! | [`rotate`] | rotating one image, and invalidating what it changed |
+//! | [`group`] | the fingerprint pass behind `g`, and the stacks it makes |
 //! | [`queue`] | an operation over the whole selection, as a plain queue |
 //! | [`batch`] | driving that queue from the wall |
 //! | [`ops`] | what that operation does to one file |
@@ -27,6 +28,7 @@
 
 mod bar;
 mod batch;
+mod group;
 mod keys;
 mod layout;
 mod message;
@@ -50,6 +52,7 @@ use std::time::Instant;
 
 use iced::{Size, Task};
 
+use crate::core::grouping::Grouping;
 use crate::core::library::Library;
 use crate::Message;
 
@@ -61,6 +64,7 @@ pub(crate) use queue::BatchKind;
 pub(crate) use select::WallMode;
 pub(crate) use tile::favourite_star;
 
+use group::Hashing;
 use queue::Batch;
 use thumbs::ThumbState;
 
@@ -99,6 +103,14 @@ pub(crate) struct WallState {
     last_click: Option<(usize, Instant)>,
     /// The operation running over the selection, if any.
     batch: Option<Batch>,
+    /// The fingerprint pass behind `g`, while one is running.
+    hashing: Option<Hashing>,
+    /// The grouping the wall is *not* currently showing.
+    ///
+    /// `g` off moves it here rather than dropping it, because it holds the
+    /// folder's fingerprints and the rung the dial was left on: `g` on again is
+    /// then instant, and the wall comes back the way the user last tuned it.
+    grouping: Option<Grouping>,
 }
 
 impl WallState {
@@ -125,6 +137,8 @@ impl WallState {
             mode,
             last_click: None,
             batch: None,
+            hashing: None,
+            grouping: None,
         }
     }
 

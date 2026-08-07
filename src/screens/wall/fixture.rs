@@ -11,6 +11,8 @@ use iced::keyboard::Modifiers;
 use iced::widget::image;
 use iced::Size;
 
+use crate::core::fingerprint::Fingerprint;
+use crate::core::fingerprint_cache::Entry;
 use crate::core::library::{Library, RangeOp};
 use crate::core::tags;
 use crate::core::transfer::{Collision, TransferKind};
@@ -108,6 +110,31 @@ pub(super) fn move_kind() -> BatchKind {
 
 pub(super) fn start(state: &mut WallState, kind: BatchKind, paths: Vec<PathBuf>) {
     let _ = state.update(WallMsg::StartBatch { kind, paths });
+}
+
+/// A fingerprint whose hash is `bits` ones, so two of them are `|n - m|` apart
+/// and the runs read off the numbers against a default threshold of 10.
+pub(super) fn print(bits: u32) -> Fingerprint {
+    Fingerprint {
+        dhash: (1u64 << bits) - 1,
+        taken: None,
+        landscape: true,
+    }
+}
+
+/// Press `g` and answer the whole fingerprint pass with `bits`, one per photo.
+///
+/// Fed in library order, which is the order the pass hands photos out in, so
+/// each answer frees the slot the next one is claimed into.
+pub(super) fn group(state: &mut WallState, bits: &[u32]) {
+    let paths: Vec<PathBuf> = state.library.photos().cloned().collect();
+    let _ = state.update(WallMsg::ToggleGrouping);
+    for (path, bits) in paths.into_iter().zip(bits) {
+        let _ = state.update(WallMsg::Fingerprinted {
+            path,
+            entry: Some(Entry::for_test(print(*bits))),
+        });
+    }
 }
 
 pub(super) fn fav(state: &mut WallState) {

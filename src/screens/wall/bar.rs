@@ -24,19 +24,25 @@ impl WallState {
         if let Some(batch) = &self.batch {
             return Some(self.bar(batch.label(), "Esc cancel"));
         }
+        // A fingerprint pass takes it for the same reason: it is the only thing
+        // saying that `g` is working rather than ignoring the keypress.
+        if let Some(hashing) = &self.hashing {
+            return Some(self.bar(hashing.label(), "Esc cancel"));
+        }
 
         let (label, hint) = match self.mode {
             // Nothing to say in `Normal` — unless the wall is showing a subset
-            // of the folder, which the user must never have to guess at.
+            // of the folder, or standing for more photos than it has tiles.
+            // Neither is something the user should have to guess at.
             WallMode::Normal => {
-                return self.library.filter.as_ref().map(|tag| {
-                    let label = format!(
-                        "{} \u{2014} {} of {}",
-                        tag.to_uppercase(),
-                        self.library.paths.len(),
-                        self.library.all.len()
-                    );
-                    self.bar(label, "\u{21e7}F show all \u{b7} f unfavourite")
+                return self.normal_label().map(|label| {
+                    // Whichever of the two the user most recently asked for is
+                    // the one whose keys they are looking for.
+                    let hint = match self.library.grouping {
+                        Some(_) => "+ looser \u{b7} - tighter \u{b7} g ungroup",
+                        None => "\u{21e7}F show all \u{b7} f unfavourite",
+                    };
+                    self.bar(label, hint)
                 });
             }
             WallMode::Visual { anchor, op } => {
@@ -56,6 +62,34 @@ impl WallState {
             ),
         };
         Some(self.bar(label, hint))
+    }
+
+    /// What the bar says in `Normal`, or `None` when there is nothing to say —
+    /// an unfiltered, ungrouped wall shows every photo in the folder, once, and
+    /// needs no caption.
+    ///
+    /// Counted in photos rather than tiles, so the numbers mean files either
+    /// way: with stacks the tile count is the smaller one, and it is not what
+    /// any command acts on.
+    pub(super) fn normal_label(&self) -> Option<String> {
+        let head = match &self.library.filter {
+            Some(tag) => format!("{} \u{2014} ", tag.to_uppercase()),
+            None => String::new(),
+        };
+        let photos = self.library.photos().count();
+        match &self.library.grouping {
+            Some(grouping) => Some(format!(
+                "{head}{} \u{b7} {} \u{b7} d\u{2264}{}",
+                plural(grouping.len(), "stack"),
+                plural(photos, "photo"),
+                grouping.threshold().distance(),
+            )),
+            None => self
+                .library
+                .filter
+                .as_ref()
+                .map(|_| format!("{head}{photos} of {}", self.library.all.len())),
+        }
     }
 
     /// The bar itself: a label on the left, the keys that apply on the right.
@@ -103,6 +137,15 @@ impl WallState {
     }
 }
 
+/// `1 stack`, `2 stacks`. The bar is read at a glance and often enough that a
+/// missing plural reads as a bug in the count.
+fn plural(n: usize, thing: &str) -> String {
+    match n {
+        1 => format!("1 {thing}"),
+        n => format!("{n} {thing}s"),
+    }
+}
+
 pub(super) fn mode_bar_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
@@ -144,6 +187,48 @@ mod tests {
         nav(&mut state, Dir::Down);
         // Everything in 1..=2 is already selected: committing changes nothing.
         assert_eq!(state.pending_counts(1, RangeOp::Add), (6, 0));
+    }
+
+    #[test]
+    fn the_bar_says_nothing_about_a_plain_folder() {
+        let state = wall(&[200.0; 6], 1);
+        // Every photo, once: there is nothing the user could be surprised by.
+        assert_eq!(state.normal_label(), None);
+    }
+
+    #[test]
+    fn the_bar_counts_stacks_and_photos() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        assert_eq!(
+            state.normal_label().unwrap(),
+            "2 stacks \u{b7} 6 photos \u{b7} d\u{2264}10"
+        );
+    }
+
+    #[test]
+    fn the_bar_says_which_rung_the_dial_is_on() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        let _ = state.update(WallMsg::Retune { looser: true });
+        assert!(state.normal_label().unwrap().ends_with("d\u{2264}14"));
+    }
+
+    #[test]
+    fn the_filter_and_the_stacks_share_the_bar() {
+        let mut state = wall(&[200.0; 6], 1);
+        state.library.goto(4);
+        fav(&mut state);
+        state.library.goto(5);
+        fav(&mut state);
+        filter(&mut state);
+        group(&mut state, &[0, 0]);
+
+        // Both narrow what is on the wall, so both have to be visible at once.
+        assert_eq!(
+            state.normal_label().unwrap(),
+            "FAVOURITE \u{2014} 1 stack \u{b7} 2 photos \u{b7} d\u{2264}10"
+        );
     }
 
     #[test]

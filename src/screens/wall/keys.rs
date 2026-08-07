@@ -74,6 +74,13 @@ impl WallState {
             keyboard::Key::Character("f") if modifiers.shift() => WallMsg::ToggleFilter,
             keyboard::Key::Character("f") => WallMsg::ToggleFavourite,
 
+            keyboard::Key::Character("g") => WallMsg::ToggleGrouping,
+            // `=` as well as `+`, so loosening does not need the shift key held
+            // — it is a dial the user turns while watching the wall.
+            keyboard::Key::Character("+") => WallMsg::Retune { looser: true },
+            keyboard::Key::Character("=") => WallMsg::Retune { looser: true },
+            keyboard::Key::Character("-") => WallMsg::Retune { looser: false },
+
             keyboard::Key::Character("R") => WallMsg::Rotate { clockwise: true },
             keyboard::Key::Character("r") if modifiers.shift() => {
                 WallMsg::Rotate { clockwise: true }
@@ -142,6 +149,28 @@ mod tests {
         assert!(matches!(
             press(&state, "c"),
             Some(WallKey::Transfer(TransferKind::Copy))
+        ));
+    }
+
+    #[test]
+    fn g_toggles_grouping_and_the_dial_turns_both_ways() {
+        let state = wall(&[200.0; 6], 1);
+        assert!(matches!(
+            press(&state, "g"),
+            Some(WallKey::Msg(WallMsg::ToggleGrouping))
+        ));
+        for key in ["+", "="] {
+            assert!(
+                matches!(
+                    press(&state, key),
+                    Some(WallKey::Msg(WallMsg::Retune { looser: true }))
+                ),
+                "{key} should loosen"
+            );
+        }
+        assert!(matches!(
+            press(&state, "-"),
+            Some(WallKey::Msg(WallMsg::Retune { looser: false }))
         ));
     }
 

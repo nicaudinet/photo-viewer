@@ -58,8 +58,9 @@ impl WallState {
         self.settle()
     }
 
-    /// One rung down the Esc ladder. A running batch is the top rung — the
-    /// user is most likely reaching for Esc to stop it. From `Visual` it drops
+    /// One rung down the Esc ladder. A running batch — or a fingerprint pass —
+    /// is the top rung: the user is most likely reaching for Esc to stop
+    /// whatever is under way. From `Visual` it drops
     /// the painted range
     /// and returns the cursor to the anchor — the trip was cancelled, so it
     /// ends where it began. From `Select` it clears the set and leaves the
@@ -70,6 +71,11 @@ impl WallState {
     pub(super) fn escape(&mut self) -> Task<Message> {
         if self.batch.is_some() {
             return self.cancel_batch();
+        }
+        // A fingerprint pass sits on the same rung: it is the only other thing
+        // that takes the bar and runs on without being asked again.
+        if self.hashing.is_some() {
+            return self.cancel_hashing();
         }
         match self.mode {
             WallMode::Visual { anchor, .. } => {

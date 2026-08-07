@@ -96,20 +96,10 @@ impl Cache {
         (*remembered == stamp(path)?).then_some(*print)
     }
 
-    /// The fingerprint of `path`, hashing the photo if the cache cannot answer.
-    /// `None` if it cannot be read at all, and nothing is remembered then —
-    /// there is no point caching an absence that a re-download would fix.
-    pub fn fingerprint(&mut self, path: &Path) -> Option<Fingerprint> {
-        if let Some(print) = self.get(path) {
-            return Some(print);
-        }
-        // Stamped before the decode, not after. Taken afterwards, a write that
-        // landed *during* the decode would be recorded as though it had been
-        // hashed, and the stale hash would then look fresh forever.
-        let stamp = stamp(path)?;
-        let print = fingerprint::fingerprint(path)?;
-        self.entries.insert(path.to_path_buf(), (stamp, print));
-        Some(print)
+    /// Fold in a fingerprint [`take`] produced elsewhere.
+    pub fn remember(&mut self, path: &Path, entry: Entry) {
+        self.entries
+            .insert(path.to_path_buf(), (entry.stamp, entry.print));
     }
 
     /// Write the whole store, replacing what was there.
@@ -134,6 +124,63 @@ impl Cache {
         fs::write(&file, body.join("\n"))
             .map_err(|e| format!("Could not write {}: {e}", file.display()))
     }
+}
+
+/// A fingerprint and what the file looked like when it was taken.
+///
+/// Split out of the cache because the two live in different places: a folder is
+/// hashed by many threads at once and there is only one cache, on the thread
+/// that owns the wall. [`take`] produces one of these, and
+/// [`Cache::remember`] folds it in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entry {
+    stamp: Stamp,
+    print: Fingerprint,
+}
+
+impl Entry {
+    pub fn print(&self) -> Fingerprint {
+        self.print
+    }
+
+    /// A fingerprint carrying a stamp that matches no file on disk, so the
+    /// wall's tests can feed a pass its results without there being any photos.
+    #[cfg(test)]
+    pub(crate) fn for_test(print: Fingerprint) -> Self {
+        Self {
+            stamp: Stamp {
+                modified: 0,
+                size: 0,
+            },
+            print,
+        }
+    }
+}
+
+/// Hash `path`, ready to be remembered. `None` if it cannot be read.
+pub fn take(path: &Path) -> Option<Entry> {
+    // Stamped before the decode, not after. Taken afterwards, a write that
+    // landed *during* the decode would be recorded as though it had been
+    // hashed, and the stale hash would then look fresh forever.
+    let stamp = stamp(path)?;
+    let print = fingerprint::fingerprint(path)?;
+    Some(Entry { stamp, print })
+}
+
+/// [`take`] off the GUI thread. One task per photo, so a folder is hashed
+/// across every core the machine has rather than one at a time.
+pub async fn take_async(path: PathBuf) -> Option<Entry> {
+    tokio::task::spawn_blocking(move || take(&path))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// [`Cache::save`] off the GUI thread.
+pub async fn save_async(image_dir: PathBuf, cache: Cache) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || cache.save(&image_dir))
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))
 }
 
 /// One record: `<dhash> <modified> <size> <taken> <shape> <name>`.
@@ -231,6 +278,17 @@ mod tests {
         }
     }
 
+    /// Hash `path` through `cache`, exactly as the wall's pass does: ask the
+    /// cache, and on a miss take a fingerprint and fold it back in.
+    fn fingerprint(cache: &mut Cache, path: &Path) -> Option<Fingerprint> {
+        if let Some(print) = cache.get(path) {
+            return Some(print);
+        }
+        let entry = take(path)?;
+        cache.remember(path, entry);
+        Some(entry.print())
+    }
+
     fn touch(path: &Path, at: SystemTime) {
         fs::File::options()
             .write(true)
@@ -247,7 +305,7 @@ mod tests {
         let d = dir("round-trip");
         let path = photo(&d, "a.png", 40, 30, 0);
         let mut cache = Cache::default();
-        let print = cache.fingerprint(&path).unwrap();
+        let print = fingerprint(&mut cache, &path).unwrap();
         cache.save(&d.0).unwrap();
 
         assert_eq!(
@@ -320,8 +378,8 @@ mod tests {
         let kept = photo(&d, "a.png", 40, 30, 0);
         let gone = photo(&d, "b.png", 40, 30, 9);
         let mut cache = Cache::default();
-        cache.fingerprint(&kept).unwrap();
-        cache.fingerprint(&gone).unwrap();
+        fingerprint(&mut cache, &kept).unwrap();
+        fingerprint(&mut cache, &gone).unwrap();
         cache.save(&d.0).unwrap();
 
         let loaded = Cache::load(&d.0, std::slice::from_ref(&kept));
@@ -358,7 +416,7 @@ mod tests {
         let path = photo(&d, "a.png", 40, 30, 0);
         let was = fs::metadata(&path).unwrap().modified().unwrap();
         let mut cache = Cache::default();
-        let print = cache.fingerprint(&path).unwrap();
+        let print = fingerprint(&mut cache, &path).unwrap();
 
         // Replace the photo with bytes that cannot be decoded at all, then put
         // its stamp back. Anything that so much as opened the file would fail.
@@ -366,7 +424,7 @@ mod tests {
         fs::write(&path, vec![b'x'; size]).unwrap();
         touch(&path, was);
 
-        assert_eq!(cache.fingerprint(&path), Some(print));
+        assert_eq!(fingerprint(&mut cache, &path), Some(print));
     }
 
     #[test]
@@ -374,7 +432,7 @@ mod tests {
         let d = dir("touched");
         let path = photo(&d, "a.png", 40, 30, 0);
         let mut cache = Cache::default();
-        cache.fingerprint(&path).unwrap();
+        fingerprint(&mut cache, &path).unwrap();
 
         touch(
             &path,
@@ -389,7 +447,7 @@ mod tests {
         let path = photo(&d, "a.png", 40, 30, 0);
         let was = fs::metadata(&path).unwrap().modified().unwrap();
         let mut cache = Cache::default();
-        cache.fingerprint(&path).unwrap();
+        fingerprint(&mut cache, &path).unwrap();
 
         // The rotation case: same size, same second, different pixels. A stamp
         // that only counted whole seconds would call this unchanged.
@@ -405,7 +463,7 @@ mod tests {
         let path = photo(&d, "a.png", 40, 30, 0);
         let was = fs::metadata(&path).unwrap().modified().unwrap();
         let mut cache = Cache::default();
-        cache.fingerprint(&path).unwrap();
+        fingerprint(&mut cache, &path).unwrap();
 
         fs::write(&path, b"shorter").unwrap();
         touch(&path, was);
@@ -417,7 +475,7 @@ mod tests {
         let d = dir("vanished");
         let path = photo(&d, "a.png", 40, 30, 0);
         let mut cache = Cache::default();
-        cache.fingerprint(&path).unwrap();
+        fingerprint(&mut cache, &path).unwrap();
 
         fs::remove_file(&path).unwrap();
         assert_eq!(cache.get(&path), None);
@@ -430,9 +488,9 @@ mod tests {
         fs::write(&path, b"not an image").unwrap();
 
         let mut cache = Cache::default();
-        assert_eq!(cache.fingerprint(&path), None);
+        assert_eq!(fingerprint(&mut cache, &path), None);
         assert!(cache.entries.is_empty());
-        assert_eq!(cache.fingerprint(&d.0.join("missing.png")), None);
+        assert_eq!(fingerprint(&mut cache, &d.0.join("missing.png")), None);
     }
 
     #[test]
@@ -443,11 +501,11 @@ mod tests {
             .collect();
 
         let mut cache = Cache::default();
-        let first: Vec<_> = paths.iter().map(|p| cache.fingerprint(p)).collect();
+        let first: Vec<_> = paths.iter().map(|p| fingerprint(&mut cache, p)).collect();
         cache.save(&d.0).unwrap();
 
         let mut loaded = Cache::load(&d.0, &paths);
-        let second: Vec<_> = paths.iter().map(|p| loaded.fingerprint(p)).collect();
+        let second: Vec<_> = paths.iter().map(|p| fingerprint(&mut loaded, p)).collect();
         assert_eq!(first, second);
         assert!(first.iter().all(Option::is_some));
     }

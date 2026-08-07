@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use iced::widget::image;
 use iced::Size;
 
+use crate::core::fingerprint_cache::Entry;
 use crate::core::library::RangeOp;
 
 use super::queue::{BatchKind, FileDone};
@@ -75,6 +76,20 @@ pub(crate) enum WallMsg {
     StartBatch {
         kind: BatchKind,
         paths: Vec<PathBuf>,
+    },
+    /// `g`: stack runs of near-identical photos, or take the stacks apart.
+    ToggleGrouping,
+    /// One photo of the fingerprint pass has been hashed. `None` if it could
+    /// not be read — the pass has to hear about that too, or it never ends.
+    Fingerprinted {
+        path: PathBuf,
+        entry: Option<Entry>,
+    },
+    /// The fingerprint cache was written. Only ever reported when it wasn't.
+    FingerprintsSaved(Result<(), String>),
+    /// `+` / `-`: change how alike two photos have to be to stack.
+    Retune {
+        looser: bool,
     },
     /// The tag store was written. Only ever reported when it wasn't.
     TagsSaved(Result<(), String>),

@@ -25,7 +25,7 @@ impl WallState {
     /// the same reasons [`WallState::rotate`] is: an uncommitted range has no
     /// settled meaning, and two batches would fight over the same files.
     pub(super) fn start_batch(&mut self, kind: BatchKind, paths: Vec<PathBuf>) -> Task<Message> {
-        if self.is_visual() || self.batch.is_some() || paths.is_empty() {
+        if self.is_visual() || self.batch.is_some() || self.hashing.is_some() || paths.is_empty() {
             return Task::none();
         }
         self.batch = Some(Batch::new(kind, paths));

@@ -105,12 +105,6 @@ impl Threshold {
     pub fn tighter(self) -> Self {
         Self(self.0.saturating_sub(1))
     }
-
-    /// Which rung this is, for the mode bar — which grows one in phase 4.
-    #[allow(dead_code)]
-    pub fn rung(self) -> (usize, usize) {
-        (self.0 + 1, Self::LADDER.len())
-    }
 }
 
 impl Default for Threshold {
@@ -569,11 +563,5 @@ mod tests {
             assert!(t.drift() > t.distance());
             t = t.looser();
         }
-    }
-
-    #[test]
-    fn the_rung_is_reported_from_one() {
-        assert_eq!(Threshold::default().rung(), (3, 5));
-        assert_eq!(Threshold::default().tighter().tighter().rung(), (1, 5));
     }
 }

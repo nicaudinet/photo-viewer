@@ -308,28 +308,29 @@ impl Library {
     // until then in one place: an allowed item counts as live, so this also
     // keeps the ladder underneath it — `Threshold::looser` and friends — from
     // reading as unreachable.
-    /// Turn grouping on over these fingerprints, or off with `None`.
-    #[allow(dead_code)]
-    pub fn set_grouping(&mut self, grouping: Option<Grouping>) {
-        self.grouping = grouping;
+    /// Turn grouping on over these fingerprints, or off with `None`, handing
+    /// back whatever was there before.
+    ///
+    /// The old grouping is worth having: it holds the fingerprints, so a wall
+    /// that keeps it can be re-grouped without hashing the folder again.
+    pub fn set_grouping(&mut self, grouping: Option<Grouping>) -> Option<Grouping> {
+        let previous = std::mem::replace(&mut self.grouping, grouping);
         // Cannot empty the wall: grouping only ever folds photos into a tile
         // that is on it already.
         let _ = self.relist();
+        previous
     }
 
-    #[allow(dead_code)]
     pub fn loosen(&mut self) {
         self.retune(Threshold::looser);
     }
 
-    #[allow(dead_code)]
     pub fn tighten(&mut self) {
         self.retune(Threshold::tighter);
     }
 
     /// Move the threshold and re-chain, unless the ladder has run out or there
     /// is no grouping to re-chain.
-    #[allow(dead_code)]
     fn retune(&mut self, step: fn(Threshold) -> Threshold) {
         let Some(grouping) = &mut self.grouping else {
             return;

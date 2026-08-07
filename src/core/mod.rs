@@ -13,6 +13,10 @@ pub mod exif;
 // phase 3); it is a pure policy module, tested on its own until then.
 #[allow(dead_code)]
 pub mod fingerprint;
+// Likewise: the wall starts hashing folders in phase 4, and this is what it will
+// hash them through.
+#[allow(dead_code)]
+pub mod fingerprint_cache;
 pub mod imaging;
 pub mod library;
 pub mod platform;

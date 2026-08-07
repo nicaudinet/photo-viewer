@@ -1,0 +1,5 @@
+# Formatting-only commits, skipped by `git blame`.
+# Enable with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Run rustfmt over the tree
+18608b1ec42a537ca9f23ca068c5ae9b22d4c14a

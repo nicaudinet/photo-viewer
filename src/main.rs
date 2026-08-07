@@ -20,7 +20,7 @@
 //! `SELECT_MODE_PLAN.md`.
 //!
 //! `App` here owns only screen-independent state and the transitions between
-//! screens; each screen's own state, actions, and view live in `gui/`.
+//! screens; each screen's own state, actions, and view live in `screens/`.
 
 mod exif;
 mod library;
@@ -33,7 +33,7 @@ mod pointed_list;
 mod tags;
 mod transfer;
 
-mod gui;
+mod screens;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -44,10 +44,11 @@ use iced::widget::Stack;
 use iced::window::Mode;
 use iced::{Element, Size, Subscription, Task, Theme};
 
-use gui::empty::empty_view;
-use gui::single::{SingleMsg, SingleState};
-use gui::wall::{BatchKind, Click, Dir, WallMsg, WallState};
-use gui::{confirm_overlay, help_overlay};
+use screens::empty::empty_view;
+use screens::single::{SingleMsg, SingleState};
+use screens::wall::BatchKind;
+use screens::wall::{Click, Dir, WallMsg, WallState};
+use screens::{confirm_overlay, help_overlay};
 use library::{load_library, Library, RangeOp, IMAGE_EXTENSIONS};
 use transfer::{Collision, TransferKind};
 
@@ -250,7 +251,7 @@ enum Message {
     ConfirmNo,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it
-    /// is only a trigger — `gui::wall::measure` reads the real number back.
+    /// is only a trigger — `screens::wall::measure` reads the real number back.
     WallMeasure,
 
     // Transitions between screens — owned by `App` because a per-screen update
@@ -754,7 +755,7 @@ impl App {
                 }
             }
             Message::WallMeasure => match &self.screen {
-                Screen::Wall(_) => gui::wall::measure(),
+                Screen::Wall(_) => screens::wall::measure(),
                 _ => Task::none(),
             },
 

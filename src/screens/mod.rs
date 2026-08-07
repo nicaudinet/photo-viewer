@@ -1,6 +1,6 @@
-//! GUI layer: one module per screen, plus the shared widgets, styling, and
-//! constants they have in common. `App` (in `main.rs`) owns the screen-
-//! independent state and orchestrates transitions between these screens.
+//! One module per screen, plus the shared widgets, styling, and constants they
+//! have in common. `App` (in `main.rs`) owns the screen-independent state and
+//! orchestrates transitions between these screens.
 
 pub mod empty;
 pub mod single;

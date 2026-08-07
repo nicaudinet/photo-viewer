@@ -9,6 +9,10 @@
 //! type that carries it.
 
 pub mod exif;
+// Nothing consumes this until the library learns to group (`GROUP_MODE_PLAN.md`
+// phase 3); it is a pure policy module, tested on its own until then.
+#[allow(dead_code)]
+pub mod fingerprint;
 pub mod imaging;
 pub mod library;
 pub mod platform;

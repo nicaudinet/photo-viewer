@@ -44,11 +44,7 @@ pub(crate) async fn thumbnail_async(
 /// JPEGs take a scale-on-decode fast path (see [`decode_jpeg_prescaled`]); PNGs
 /// (and any JPEG that path can't handle) fall back to a full decode.
 pub(crate) fn thumbnail(path: &Path, width: u32) -> Result<(image::Handle, u32), String> {
-    let orientation = orientation(path);
-    let mut source = load_thumb_source(path, width, orientation)?;
-    // Before measuring: a quarter-turn swaps the dimensions, and the thumbnail
-    // is sized from the dimensions the viewer will actually see.
-    source.apply_orientation(orientation);
+    let source = oriented_source(path, width)?;
     let (w, h) = source.dimensions();
     let target_h = scaled_height(w, h, width);
     let resized = source.resize(width, target_h, ::image::imageops::FilterType::Triangle);
@@ -112,6 +108,22 @@ pub(crate) async fn thumb_heights_async(paths: Vec<PathBuf>, width: u32) -> Vec<
     })
     .await
     .unwrap_or_default()
+}
+
+/// Decode `path` at no less than `width` across, turned the way up it is shown.
+///
+/// The shared front half of [`thumbnail`], also used to build a fingerprint (see
+/// [`crate::core::fingerprint`]). Applying the orientation here rather than at
+/// each call site is what makes a photo hash the same before and after it is
+/// rotated: rotation rewrites one EXIF tag, so a hasher reading stored pixels
+/// would decide a photo had stopped resembling the ones beside it.
+pub(crate) fn oriented_source(path: &Path, width: u32) -> Result<DynamicImage, String> {
+    let orientation = orientation(path);
+    let mut source = load_thumb_source(path, width, orientation)?;
+    // Before measuring: a quarter-turn swaps the dimensions, and the thumbnail
+    // is sized from the dimensions the viewer will actually see.
+    source.apply_orientation(orientation);
+    Ok(source)
 }
 
 /// The height a `width`-wide thumbnail of `path` will have, from its header

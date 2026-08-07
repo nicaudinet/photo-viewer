@@ -141,10 +141,12 @@ impl WallState {
         if self.is_visual() || self.batch.is_some() || self.mode != WallMode::Select {
             return None;
         }
+        // Over the photos rather than the tiles: with grouping on, `paths` holds
+        // one entry per stack, and iterating it would quietly drop every member
+        // but the first from an operation the user asked for on all of them.
         let selected: Vec<PathBuf> = self
             .library
-            .paths
-            .iter()
+            .photos()
             .filter(|p| self.library.is_selected(p))
             .cloned()
             .collect();

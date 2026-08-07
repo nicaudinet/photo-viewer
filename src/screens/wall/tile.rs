@@ -8,7 +8,7 @@ use iced::theme::palette::lighten;
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
 
-use crate::core::library::RangeOp;
+use crate::core::library::{RangeOp, Selected};
 use crate::core::tags;
 use crate::Message;
 
@@ -24,6 +24,9 @@ pub(super) const SEL_LIGHTEN: f32 = 0.25;
 /// The pending one is lighter so an uncommitted range never looks decided.
 pub(super) const TINT_COMMITTED: f32 = 0.32;
 pub(super) const TINT_PENDING: f32 = 0.18;
+/// Tint over a stack only some of whose photos are selected. Half of a whole
+/// one, so a partly-selected pile cannot be mistaken for a decided one.
+pub(super) const TINT_PARTIAL: f32 = 0.16;
 
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
@@ -116,7 +119,7 @@ impl WallState {
         path: &std::path::Path,
         current: usize,
     ) -> TileLook {
-        let selected = self.library.is_selected(path);
+        let selected = self.library.selected(path);
         let pending = match self.mode {
             WallMode::Visual { anchor, op } => {
                 let (lo, hi) = (anchor.min(current), anchor.max(current));
@@ -134,15 +137,16 @@ impl WallState {
             match pending {
                 Some(RangeOp::Add) => Some(Accent::Select),
                 Some(RangeOp::Remove) => Some(Accent::Remove),
-                None => selected.then_some(Accent::Select),
+                None => (selected != Selected::None).then_some(Accent::Select),
             }
         };
 
-        let (tint, tint_alpha) = match pending {
-            Some(RangeOp::Add) => (Some(Accent::Select), TINT_PENDING),
-            Some(RangeOp::Remove) => (Some(Accent::Remove), TINT_PENDING),
-            None if selected => (Some(Accent::Select), TINT_COMMITTED),
-            None => (None, 0.0),
+        let (tint, tint_alpha) = match (pending, selected) {
+            (Some(RangeOp::Add), _) => (Some(Accent::Select), TINT_PENDING),
+            (Some(RangeOp::Remove), _) => (Some(Accent::Remove), TINT_PENDING),
+            (None, Selected::All) => (Some(Accent::Select), TINT_COMMITTED),
+            (None, Selected::Some) => (Some(Accent::Select), TINT_PARTIAL),
+            (None, Selected::None) => (None, 0.0),
         };
 
         TileLook {
@@ -151,7 +155,9 @@ impl WallState {
             tint_alpha,
             // Kept on a tile pending removal: it is still selected until the
             // range is committed, and saying otherwise would pre-empt the user.
-            badge: selected,
+            // Only a whole stack earns one — half of one is not a decision the
+            // badge can state.
+            badge: selected == Selected::All,
             // Redundant while the wall is filtered to the favourites — every
             // tile would carry one, which says nothing.
             star: self.library.filter.is_none() && self.library.is_tagged(tags::FAVOURITE, path),

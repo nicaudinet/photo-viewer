@@ -38,6 +38,7 @@ pub(super) fn wall(heights: &[f32], col_count: usize) -> WallState {
         selection: HashSet::new(),
         tags: crate::core::tags::Tags::new(),
         filter: None,
+        grouping: None,
     };
     let mut state = WallState::new(library);
     state.ratios = files.into_iter().zip(heights.iter().copied()).collect();

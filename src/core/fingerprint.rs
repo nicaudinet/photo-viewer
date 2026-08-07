@@ -106,7 +106,8 @@ impl Threshold {
         Self(self.0.saturating_sub(1))
     }
 
-    /// Which rung this is, for the mode bar.
+    /// Which rung this is, for the mode bar — which grows one in phase 4.
+    #[allow(dead_code)]
     pub fn rung(self) -> (usize, usize) {
         (self.0 + 1, Self::LADDER.len())
     }

@@ -81,12 +81,15 @@ impl WallState {
     pub(super) fn pending_counts(&self, anchor: usize, op: RangeOp) -> (usize, i64) {
         let cursor = self.library.paths.index();
         let (lo, hi) = (anchor.min(cursor), anchor.max(cursor));
+        // Counted in photos, not tiles: a range covering one stack of four says
+        // four, because four files are what the next command will act on.
         let touched = self
             .library
             .paths
             .iter()
             .skip(lo)
             .take(hi + 1 - lo)
+            .flat_map(|p| self.library.members(p))
             .filter(|p| match op {
                 RangeOp::Add => !self.library.is_selected(p),
                 RangeOp::Remove => self.library.is_selected(p),

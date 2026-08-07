@@ -120,6 +120,7 @@ mod tests {
             selection: HashSet::new(),
             tags: crate::core::tags::Tags::new(),
             filter: None,
+            grouping: None,
         })
     }
 

@@ -12,6 +12,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::core::fingerprint::Threshold;
+use crate::core::grouping::Grouping;
 use crate::core::pointed_list::PointedList;
 use crate::core::tags::{self, Tags};
 
@@ -82,6 +84,13 @@ pub struct Library {
     pub tags: Tags,
     /// The tag `paths` is narrowed to, if any.
     pub filter: Option<String>,
+    /// The stacks over the visible photos, when grouping is on.
+    ///
+    /// This is the one thing that makes `paths` shorter than what the wall
+    /// stands for: with grouping on it holds one entry per *tile*, a run of
+    /// near-identical photos contributing only the first of them. `all` and
+    /// `selection` stay in photos throughout — see [`Library::members`].
+    pub grouping: Option<Grouping>,
 }
 
 impl Library {
@@ -103,20 +112,89 @@ impl Library {
         self.paths.goto(index)
     }
 
+    // --- Stacks ---
+
+    /// Every photo on the wall, in order.
+    ///
+    /// One entry per *photo*, where `paths` is one per *tile*: the two are the
+    /// same list unless grouping is on. Anything that acts on files rather than
+    /// on what is drawn wants this one.
+    pub fn photos(&self) -> impl Iterator<Item = &PathBuf> {
+        self.all.iter().filter(|p| self.shows(p))
+    }
+
+    /// The photos the tile at `path` stands for: a stack's members, or — for a
+    /// plain thumbnail — the photo itself.
+    pub fn members(&self, path: &Path) -> Vec<PathBuf> {
+        match self.grouping.as_ref().and_then(|g| g.stack(path)) {
+            Some(members) => members.to_vec(),
+            None => vec![path.to_path_buf()],
+        }
+    }
+
+    /// How many photos the tile at `path` stands for. One, unless it is a
+    /// stack — which is what a confirmation has to count in, once there is a
+    /// stack to confirm against (phases 5 and 7).
+    #[allow(dead_code)]
+    pub fn stack_size(&self, path: &Path) -> usize {
+        self.grouping
+            .as_ref()
+            .and_then(|g| g.stack(path))
+            .map_or(1, <[PathBuf]>::len)
+    }
+
     // --- Selection ---
 
+    /// Whether this exact photo is selected. A tile standing for several wants
+    /// [`selected`](Self::selected) instead.
     pub fn is_selected(&self, path: &Path) -> bool {
         self.selection.contains(path)
     }
 
-    /// Add or remove the image at `index`, whichever it isn't already.
+    /// How much of what the tile at `path` stands for is selected.
+    pub fn selected(&self, path: &Path) -> Selected {
+        let Some(members) = self.grouping.as_ref().and_then(|g| g.stack(path)) else {
+            return if self.is_selected(path) {
+                Selected::All
+            } else {
+                Selected::None
+            };
+        };
+        match members.iter().filter(|p| self.is_selected(p)).count() {
+            0 => Selected::None,
+            n if n == members.len() => Selected::All,
+            _ => Selected::Some,
+        }
+    }
+
+    /// Put everything the tile at `path` stands for into the selection, or take
+    /// all of it out.
+    ///
+    /// Every path that reaches the selection goes through here, which is why
+    /// nothing downstream — not the batch queue, not trash, not the move — ever
+    /// has to know that stacks exist. They see real photos because there is
+    /// nothing else to see.
+    fn set_selected(&mut self, path: &Path, on: bool) {
+        for member in self.members(path) {
+            if on {
+                self.selection.insert(member);
+            } else {
+                self.selection.remove(&member);
+            }
+        }
+    }
+
+    /// Add or remove the tile at `index`, whichever it isn't already.
+    ///
+    /// A half-selected stack fills up rather than emptying, for the same reason
+    /// [`toggle_tag`](Self::toggle_tag) works that way: one keypress over a
+    /// mixed group has to leave it agreeing, or nobody can predict the result.
     pub fn toggle_selected(&mut self, index: usize) {
         let Some(path) = self.paths.iter().nth(index).cloned() else {
             return;
         };
-        if !self.selection.remove(&path) {
-            self.selection.insert(path);
-        }
+        let on = self.selected(&path) != Selected::All;
+        self.set_selected(&path, on);
     }
 
     /// Apply `op` to every image in the inclusive index range between `a` and
@@ -132,28 +210,22 @@ impl Library {
             .cloned()
             .collect();
         for path in paths {
-            match op {
-                RangeOp::Add => {
-                    self.selection.insert(path);
-                }
-                RangeOp::Remove => {
-                    self.selection.remove(&path);
-                }
-            }
+            self.set_selected(&path, op == RangeOp::Add);
         }
     }
 
     pub fn select_all(&mut self) {
-        self.selection = self.paths.iter().cloned().collect();
+        self.selection = self.photos().cloned().collect();
     }
 
     pub fn invert_selection(&mut self) {
-        self.selection = self
-            .paths
-            .iter()
-            .filter(|p| !self.selection.contains(*p))
-            .cloned()
-            .collect();
+        // Tile by tile rather than photo by photo, so that what inverts is what
+        // the user can see: a half-selected stack fills, a full one empties.
+        let tiles: Vec<PathBuf> = self.paths.iter().cloned().collect();
+        for path in tiles {
+            let on = self.selected(&path) != Selected::All;
+            self.set_selected(&path, on);
+        }
     }
 
     pub fn clear_selection(&mut self) {
@@ -230,8 +302,53 @@ impl Library {
         false
     }
 
-    /// Rebuild `paths` from `all` and the filter, keeping the cursor where it
-    /// can and landing it near where it was when it cannot.
+    // --- Grouping ---
+    //
+    // The controls the wall reaches for once `g` exists (phase 4). Allowed dead
+    // until then in one place: an allowed item counts as live, so this also
+    // keeps the ladder underneath it — `Threshold::looser` and friends — from
+    // reading as unreachable.
+    /// Turn grouping on over these fingerprints, or off with `None`.
+    #[allow(dead_code)]
+    pub fn set_grouping(&mut self, grouping: Option<Grouping>) {
+        self.grouping = grouping;
+        // Cannot empty the wall: grouping only ever folds photos into a tile
+        // that is on it already.
+        let _ = self.relist();
+    }
+
+    #[allow(dead_code)]
+    pub fn loosen(&mut self) {
+        self.retune(Threshold::looser);
+    }
+
+    #[allow(dead_code)]
+    pub fn tighten(&mut self) {
+        self.retune(Threshold::tighter);
+    }
+
+    /// Move the threshold and re-chain, unless the ladder has run out or there
+    /// is no grouping to re-chain.
+    #[allow(dead_code)]
+    fn retune(&mut self, step: fn(Threshold) -> Threshold) {
+        let Some(grouping) = &mut self.grouping else {
+            return;
+        };
+        let next = step(grouping.threshold());
+        if next == grouping.threshold() {
+            return;
+        }
+        grouping.set_threshold(next);
+        let _ = self.relist();
+    }
+
+    /// Rebuild `paths` from `all`, the filter and the grouping, keeping the
+    /// cursor where it can and landing it near where it was when it cannot.
+    ///
+    /// The filter runs first and the grouping over what survives it, so a hidden
+    /// photo breaks a run and its neighbours are weighed against each other.
+    /// That is the honest reading: grouping describes what is on the wall, and a
+    /// photo that is not on the wall is not part of a run.
     ///
     /// `false` if that leaves nothing — `PointedList` cannot be empty, so every
     /// caller has to decide what to do about it.
@@ -241,12 +358,20 @@ impl Library {
         let previous: Vec<PathBuf> = self.paths.iter().cloned().collect();
 
         let kept: Vec<PathBuf> = self.all.iter().filter(|p| self.shows(p)).cloned().collect();
-        let Some(mut paths) = PointedList::new(kept) else {
+        let tiles = match &mut self.grouping {
+            Some(grouping) => grouping.rebuild(&kept),
+            None => kept.clone(),
+        };
+        let Some(mut paths) = PointedList::new(tiles) else {
             return false;
         };
 
         if paths.contains(&current) {
             paths.goto_value(&current);
+        } else if let Some(head) = self.grouping.as_ref().and_then(|g| g.head_of(&current)) {
+            // Not gone, just folded into a pile: follow the photo into it,
+            // rather than treating it as one that vanished.
+            paths.goto_value(head);
         } else {
             // Gone from view. Take the nearest of where it used to sit, by
             // *old* position rather than by wrapping the way navigation does:
@@ -265,7 +390,12 @@ impl Library {
         // selection reaching past the wall is the one thing filtering must
         // never allow: it would put images the user cannot see into the next
         // batch.
-        self.selection.retain(|p| paths.contains(p));
+        //
+        // Measured against what the filter kept rather than against `paths`,
+        // because a photo inside a stack is on the wall without being in
+        // `paths`. Dropping those would empty the selection of every stack.
+        let shown: HashSet<&PathBuf> = kept.iter().collect();
+        self.selection.retain(|p| shown.contains(p));
         self.paths = paths;
         true
     }
@@ -296,6 +426,17 @@ impl Library {
 pub enum RangeOp {
     Add,
     Remove,
+}
+
+/// How much of what one tile stands for is selected.
+///
+/// Only a stack can be `Some`: a plain thumbnail stands for one photo, which is
+/// either selected or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selected {
+    None,
+    Some,
+    All,
 }
 
 /// Scan `image_dir` for images.
@@ -332,6 +473,9 @@ pub fn load_library(image_dir: &Path) -> Result<Option<Library>, LibraryError> {
         // Opening a folder shows what is in it. A filter carried over from a
         // previous session would hide photos before the user had seen any.
         filter: None,
+        // Fingerprinting a folder costs a decode of every photo in it, so it
+        // waits for the first `g` rather than happening at every open.
+        grouping: None,
     }))
 }
 
@@ -390,8 +534,54 @@ mod tests {
             selection: HashSet::new(),
             tags: Tags::new(),
             filter: None,
+            grouping: None,
         };
         Fixture { dir, images, lib }
+    }
+
+    /// A library of `bits.len()` images, grouped, whose fingerprints are `bits`
+    /// ones each — so two of them are `|n - m|` apart and the runs can be read
+    /// off the numbers against a default threshold of 10.
+    fn grouped(tag: &str, bits: &[u32]) -> Fixture {
+        let dir = unique_dir(tag);
+        fs::create_dir_all(&dir).unwrap();
+        let images: Vec<PathBuf> = (0..bits.len())
+            .map(|i| dir.join(format!("{i}.png")))
+            .collect();
+        for p in &images {
+            fs::write(p, b"fake-image").unwrap();
+        }
+
+        let mut lib = Library {
+            all: images.clone(),
+            paths: PointedList::new(images.clone()).unwrap(),
+            image_dir: dir.clone(),
+            selection: HashSet::new(),
+            tags: Tags::new(),
+            filter: None,
+            grouping: None,
+        };
+        lib.set_grouping(Some(Grouping::new(prints(&images, bits))));
+        Fixture { dir, images, lib }
+    }
+
+    /// Fingerprints of `bits` ones each, by path.
+    fn prints(
+        images: &[PathBuf],
+        bits: &[u32],
+    ) -> std::collections::HashMap<PathBuf, crate::core::fingerprint::Fingerprint> {
+        images
+            .iter()
+            .zip(bits)
+            .map(|(path, bits)| {
+                let print = crate::core::fingerprint::Fingerprint {
+                    dhash: (1u64 << bits) - 1,
+                    taken: None,
+                    landscape: true,
+                };
+                (path.clone(), print)
+            })
+            .collect()
     }
 
     /// The visible images, in order.
@@ -789,6 +979,237 @@ mod tests {
         assert!(lib.remove(&HashSet::new()));
         assert_eq!(lib.paths.len(), 3);
         assert_eq!(lib.paths.index(), 1);
+    }
+
+    // --- Grouping ---
+
+    #[test]
+    fn a_run_of_similar_photos_becomes_one_tile() {
+        let f = grouped("group-fold", &[0, 1, 2, 40]);
+        assert_eq!(
+            shown(&f.lib),
+            vec![f.images[0].clone(), f.images[3].clone()]
+        );
+        assert_eq!(f.lib.stack_size(&f.images[0]), 3);
+        assert_eq!(f.lib.members(&f.images[0]), f.images[..3].to_vec());
+    }
+
+    #[test]
+    fn a_tile_that_is_not_a_stack_stands_for_itself() {
+        let f = grouped("group-lone", &[0, 1, 2, 40]);
+        assert_eq!(f.lib.stack_size(&f.images[3]), 1);
+        assert_eq!(f.lib.members(&f.images[3]), vec![f.images[3].clone()]);
+    }
+
+    #[test]
+    fn the_photos_are_all_still_there() {
+        let f = grouped("group-photos", &[0, 1, 2, 40]);
+        // Two tiles, four photos. Everything that acts on files reads the
+        // second number, and nothing but the drawing reads the first.
+        assert_eq!(f.lib.paths.len(), 2);
+        assert_eq!(f.lib.photos().cloned().collect::<Vec<_>>(), f.images);
+    }
+
+    #[test]
+    fn turning_grouping_off_puts_every_photo_back() {
+        let f = grouped("group-off", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.set_grouping(None);
+        assert_eq!(shown(&lib), f.images);
+        assert_eq!(lib.stack_size(&f.images[0]), 1);
+    }
+
+    #[test]
+    fn selecting_a_stack_selects_every_photo_in_it() {
+        let f = grouped("group-select", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(0);
+        // The whole point of expanding here: `d` on this tile now trashes three
+        // files, because three real paths are what the selection holds.
+        assert_eq!(selected(&lib), f.images[..3].to_vec());
+        assert_eq!(lib.selected(&f.images[0]), Selected::All);
+    }
+
+    #[test]
+    fn toggling_a_full_stack_empties_it() {
+        let f = grouped("group-deselect", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(0);
+        lib.toggle_selected(0);
+        assert!(lib.selection.is_empty());
+    }
+
+    #[test]
+    fn a_half_selected_stack_fills_up_rather_than_emptying() {
+        let f = grouped("group-half", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.selection.insert(f.images[1].clone());
+        assert_eq!(lib.selected(&f.images[0]), Selected::Some);
+
+        // Emptying it would be the other reading, and it leaves the user unable
+        // to say "all of this" with one press.
+        lib.toggle_selected(0);
+        assert_eq!(selected(&lib), f.images[..3].to_vec());
+    }
+
+    #[test]
+    fn a_painted_range_takes_whole_stacks() {
+        let f = grouped("group-range", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.apply_range(0, 1, RangeOp::Add);
+        assert_eq!(selected(&lib), f.images);
+
+        lib.apply_range(0, 0, RangeOp::Remove);
+        assert_eq!(selected(&lib), vec![f.images[3].clone()]);
+    }
+
+    #[test]
+    fn select_all_takes_the_photos_not_the_tiles() {
+        let f = grouped("group-all", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.select_all();
+        assert_eq!(selected(&lib), f.images);
+    }
+
+    #[test]
+    fn inverting_works_tile_by_tile() {
+        let f = grouped("group-invert", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(0);
+        lib.invert_selection();
+        // What the user sees inverts: the stack empties, the lone photo fills.
+        assert_eq!(selected(&lib), vec![f.images[3].clone()]);
+    }
+
+    #[test]
+    fn a_partly_selected_stack_fills_when_inverted() {
+        let f = grouped("group-invert-half", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.selection.insert(f.images[1].clone());
+        lib.invert_selection();
+        // It was not selected, so it becomes selected — all of it.
+        assert_eq!(selected(&lib), f.images);
+    }
+
+    #[test]
+    fn the_cursor_follows_its_photo_into_the_stack() {
+        let f = grouped("group-cursor", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.set_grouping(None);
+        lib.goto(2);
+
+        lib.set_grouping(Some(Grouping::new(prints(&f.images, &[0, 1, 2, 40]))));
+        // The photo it was on is no longer a tile, but it has not gone
+        // anywhere: it is in the pile the cursor now sits on.
+        assert_eq!(lib.current(), &f.images[0]);
+    }
+
+    #[test]
+    fn a_photo_the_filter_hides_breaks_the_run() {
+        let f = grouped("group-filter", &[0, 8, 16]);
+        let mut lib = f.lib.clone();
+        assert_eq!(lib.stack_size(&f.images[0]), 3);
+
+        // The middle photo is what held the two ends together; hidden, they are
+        // weighed against each other and found too far apart.
+        lib.toggle_tag(FAV, &[f.images[0].clone(), f.images[2].clone()]);
+        assert!(lib.set_filter(Some(FAV.to_string())));
+        assert_eq!(shown(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+        assert_eq!(lib.stack_size(&f.images[0]), 1);
+    }
+
+    #[test]
+    fn a_selected_member_the_filter_hides_leaves_the_selection() {
+        let f = grouped("group-filter-select", &[0, 1, 2, 40]);
+        let mut lib = f.lib.clone();
+        lib.toggle_selected(0);
+        lib.toggle_tag(
+            FAV,
+            &[
+                f.images[0].clone(),
+                f.images[1].clone(),
+                f.images[3].clone(),
+            ],
+        );
+
+        assert!(lib.set_filter(Some(FAV.to_string())));
+        // The hidden member goes, the visible ones stay — the retain has to
+        // keep stack members, which are on the wall without being in `paths`.
+        assert_eq!(selected(&lib), f.images[..2].to_vec());
+        assert_eq!(lib.selected(&f.images[0]), Selected::All);
+    }
+
+    #[test]
+    fn trashing_the_photo_between_two_others_lets_them_stack() {
+        let f = grouped("group-regroup", &[0, 40, 1]);
+        let mut lib = f.lib.clone();
+        assert_eq!(shown(&lib), f.images);
+
+        let gone: HashSet<PathBuf> = [f.images[1].clone()].into_iter().collect();
+        assert!(lib.remove(&gone));
+        // Frozen groups would leave these two apart until the next `g`, and the
+        // wall would be describing a folder that no longer exists.
+        assert_eq!(shown(&lib), vec![f.images[0].clone()]);
+        assert_eq!(lib.stack_size(&f.images[0]), 2);
+    }
+
+    #[test]
+    fn a_stack_that_loses_all_but_one_member_dissolves() {
+        let f = grouped("group-dissolve", &[0, 1, 40]);
+        let mut lib = f.lib.clone();
+        assert_eq!(lib.stack_size(&f.images[0]), 2);
+
+        let gone: HashSet<PathBuf> = [f.images[1].clone()].into_iter().collect();
+        assert!(lib.remove(&gone));
+        assert_eq!(lib.stack_size(&f.images[0]), 1);
+        assert_eq!(shown(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+    }
+
+    #[test]
+    fn loosening_the_dial_merges_stacks() {
+        let f = grouped("group-loosen", &[0, 6, 12, 18]);
+        let mut lib = f.lib.clone();
+        assert_eq!(lib.paths.len(), 2);
+
+        lib.loosen();
+        lib.loosen();
+        assert_eq!(shown(&lib), vec![f.images[0].clone()]);
+        assert_eq!(lib.stack_size(&f.images[0]), 4);
+    }
+
+    #[test]
+    fn tightening_the_dial_splits_them() {
+        let f = grouped("group-tighten", &[0, 6, 12, 18]);
+        let mut lib = f.lib.clone();
+        lib.tighten();
+        assert_eq!(shown(&lib), vec![f.images[0].clone(), f.images[2].clone()]);
+        assert_eq!(lib.stack_size(&f.images[0]), 2);
+        assert_eq!(lib.stack_size(&f.images[2]), 2);
+    }
+
+    #[test]
+    fn the_dial_stops_at_the_end_of_the_ladder() {
+        let f = grouped("group-ladder", &[0, 6, 12, 18]);
+        let mut lib = f.lib.clone();
+        for _ in 0..10 {
+            lib.loosen();
+        }
+        assert_eq!(lib.paths.len(), 1);
+        for _ in 0..10 {
+            lib.tighten();
+        }
+        // Tightest rung: six bits apart is too far, so nothing stacks at all.
+        assert_eq!(shown(&lib), f.images);
+    }
+
+    #[test]
+    fn the_dial_does_nothing_when_grouping_is_off() {
+        let f = fixture("group-dial-off");
+        let mut lib = f.lib.clone();
+        lib.loosen();
+        lib.tighten();
+        assert_eq!(shown(&lib), f.images);
+        assert!(lib.grouping.is_none());
     }
 
     // --- load_library ---

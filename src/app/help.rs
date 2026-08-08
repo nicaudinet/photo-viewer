@@ -20,15 +20,15 @@ use crate::keymap::Row;
 use super::view::overlay_box;
 use super::{App, Message, Screen};
 
-/// How tall the overlay may grow before its list starts scrolling. Leaves room
-/// for the title and the footer inside a small window.
+/// How tall the overlay may grow before its list starts scrolling, so that even
+/// a long keymap leaves the photo behind it visible at the edges.
 const MAX_HEIGHT: f32 = 460.0;
 
 /// Width of the key column. Wide enough for `⌘A` and `Space`, narrow enough
 /// that the sentences beside them stay in one block. The keys are set flush
 /// right inside it, so however long the spelling, it ends up against the
 /// sentence it belongs to rather than adrift from it.
-const KEY_WIDTH: f32 = 96.0;
+const KEY_WIDTH: f32 = 84.0;
 
 /// How far the key colour is lifted off the palette's primary — the same lift
 /// the wall gives the cursor ring, so the accent means one thing in the app.
@@ -63,31 +63,31 @@ pub(crate) fn help_overlay(app: &App) -> Element<'static, Message> {
     let sections = app
         .help_sections()
         .into_iter()
-        .fold(column![].spacing(20), |body, (title, rows)| {
+        .fold(column![].spacing(14), |body, (title, rows)| {
             body.push(section(title, rows))
         });
 
     let panel = container(scrollable(sections)).max_height(MAX_HEIGHT);
 
-    center(container(panel).padding(28).style(overlay_box)).into()
+    center(container(panel).padding(16).style(overlay_box)).into()
 }
 
 /// One section of the overlay: its name, then a line per binding.
 fn section(title: &'static str, rows: Vec<Row>) -> Column<'static, Message> {
     rows.into_iter().fold(
-        column![text(title).size(14).style(text::secondary)].spacing(8),
+        column![text(title).size(13).style(text::secondary)].spacing(3),
         |section, Row { keys, desc }| {
             section.push(
                 row![
                     text(keys)
-                        .size(16)
+                        .size(15)
                         .font(BOLD)
                         .style(key_colour)
                         .width(Length::Fixed(KEY_WIDTH))
                         .align_x(Horizontal::Right),
-                    text(desc).size(16),
+                    text(desc).size(15),
                 ]
-                .spacing(16),
+                .spacing(12),
             )
         },
     )

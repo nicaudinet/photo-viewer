@@ -94,6 +94,9 @@ type WallBinding = Binding<WallState, WallKey>;
 /// out of step with the keys under it would read as a lie.
 const MOVE: &str = "left / down / up / right";
 
+/// The sentence the two rotate keys share, read key for word like [`MOVE`].
+const ROTATE: &str = "Rotate left / right";
+
 /// Whether the filter can be turned either way right now.
 ///
 /// Refused while anything is selected — a filter that hid a selected photo
@@ -229,30 +232,38 @@ const WALL: &[WallBinding] = &[
         |w| filterable(w) && w.library.filter.is_none(),
         |_| WallKey::Msg(WallMsg::ToggleFilter),
     ),
-    Binding::when(
+    // The two directions are one row: `r` and `R` are the same key twice, and
+    // the pair sharing a sentence is what says so. Written twice over, once for
+    // a selection and once for the cursor — only ever one pair is live, so only
+    // ever one row is shown.
+    WallBinding::when(
         &[Chord::key('r')],
-        "Rotate the selection anticlockwise",
+        ROTATE,
         |w| !w.is_visual() && !w.working() && w.has_selection(),
         |_| WallKey::Msg(WallMsg::Rotate { clockwise: false }),
-    ),
-    Binding::when(
+    )
+    .merged(),
+    WallBinding::when(
         &[Chord::shift('R'), Chord::key('R').alias()],
-        "Rotate the selection clockwise",
+        ROTATE,
         |w| !w.is_visual() && !w.working() && w.has_selection(),
         |_| WallKey::Msg(WallMsg::Rotate { clockwise: true }),
-    ),
-    Binding::when(
+    )
+    .merged(),
+    WallBinding::when(
         &[Chord::key('r')],
-        "Rotate this photo anticlockwise",
+        ROTATE,
         |w| !w.is_visual() && !w.working() && !w.has_selection(),
         |_| WallKey::Msg(WallMsg::Rotate { clockwise: false }),
-    ),
-    Binding::when(
+    )
+    .merged(),
+    WallBinding::when(
         &[Chord::shift('R'), Chord::key('R').alias()],
-        "Rotate this photo clockwise",
+        ROTATE,
         |w| !w.is_visual() && !w.working() && !w.has_selection(),
         |_| WallKey::Msg(WallMsg::Rotate { clockwise: true }),
-    ),
+    )
+    .merged(),
     // Move, copy and trash have no cursor reading: they ask a question naming a
     // count, and "1 photo" is not what the user meant to be asked about.
     Binding::when(

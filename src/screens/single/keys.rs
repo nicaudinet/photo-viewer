@@ -29,6 +29,9 @@ impl SingleState {
 /// screen is a flat sequence — so the words are the sequence's own.
 const MOVE: &str = "previous / next";
 
+/// The sentence the two rotate keys share, as on the wall.
+const ROTATE: &str = "Rotate left / right";
+
 /// The single view's keyboard. Nothing here is guarded: a photograph on screen
 /// can always be moved away from, rotated and favourited, and this screen has
 /// no mode in which that stops being true.
@@ -50,12 +53,15 @@ const SINGLE: &[Binding<SingleState, SingleMsg>] = &[
     Binding::always(&[Chord::key('f')], "Favourite this photo", |_| {
         SingleMsg::ToggleFavourite
     }),
-    Binding::always(&[Chord::key('r')], "Rotate anticlockwise", |_| {
+    // One row, as on the wall: two keys for the two ways round.
+    Binding::always(&[Chord::key('r')], ROTATE, |_| {
         SingleMsg::RotateAnticlockwise
-    }),
+    })
+    .merged(),
     Binding::always(
         &[Chord::shift('R'), Chord::key('R').alias()],
-        "Rotate clockwise",
+        ROTATE,
         |_| SingleMsg::RotateClockwise,
-    ),
+    )
+    .merged(),
 ];

@@ -10,7 +10,7 @@
 //! trash the rest of its stack — means nothing outside a stack, so it is
 //! neither offered to the user nor dispatched there. See `HELP_PLAN.md`.
 
-use iced::keyboard::{self, key::Named, Modifiers};
+use iced::keyboard::{self, key::Named};
 
 /// One key press, as a table can name it.
 ///
@@ -41,6 +41,10 @@ enum Mods {
     None,
     Shift,
     Command,
+    /// Whatever it took to type the character. `+` is shift and `=` on one
+    /// layout and a key of its own on another, and neither spelling is worth
+    /// teaching as a chord.
+    Any,
 }
 
 impl Chord {
@@ -59,6 +63,16 @@ impl Chord {
         Self {
             key: Press::Char(c),
             mods: Mods::Shift,
+            shown: true,
+        }
+    }
+
+    /// A symbol, however the layout produces it: `?`, `+`, `-`. Shown as
+    /// itself, because "shift and slash" is not how anyone reads `?`.
+    pub(crate) const fn sym(c: char) -> Self {
+        Self {
+            key: Press::Char(c),
+            mods: Mods::Any,
             shown: true,
         }
     }
@@ -121,6 +135,9 @@ impl Chord {
                         || is_char(key, c)
                         || (modifiers.shift() && is_char_lowered(key, c)))
             }
+            (Press::Char(c), Mods::Any) => {
+                !modifiers.command() && (is_char(key, c) || is_char(modified_key, c))
+            }
             (Press::Char(c), Mods::Command) => {
                 modifiers.command() && (is_char_lowered(key, c) || is_char_lowered(modified_key, c))
             }
@@ -134,7 +151,7 @@ impl Chord {
             Press::Named(named) => named_label(named).to_string(),
         };
         match self.mods {
-            Mods::None => key,
+            Mods::None | Mods::Any => key,
             Mods::Shift => format!("\u{21e7}{key}"),
             Mods::Command => format!("\u{2318}{key}"),
         }
@@ -267,6 +284,7 @@ pub(crate) fn rows<S, O>(table: &'static [Binding<S, O>], state: &S) -> Vec<Row>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::keyboard::Modifiers;
 
     /// A key press, with `modified` for what the layout produces once the
     /// modifiers are applied.
@@ -315,10 +333,15 @@ mod tests {
         assert!(!shift_f.matches(&plain("f")));
     }
 
-    /// `?` is shift and `/` on a US layout: the raw key never carries it.
+    /// `?` is shift and `/` on a US layout, and a key of its own elsewhere:
+    /// a symbol chord takes it either way, and is written as itself.
     #[test]
-    fn question_mark_is_found_in_the_modified_key() {
-        assert!(Chord::shift('?').matches(&press(ch("/"), ch("?"), Modifiers::SHIFT)));
+    fn a_symbol_is_taken_however_it_was_typed() {
+        let question = Chord::sym('?');
+        assert!(question.matches(&press(ch("/"), ch("?"), Modifiers::SHIFT)));
+        assert!(question.matches(&plain("?")));
+        assert_eq!(question.label(), "?");
+        assert!(!question.matches(&plain("/")));
     }
 
     #[test]

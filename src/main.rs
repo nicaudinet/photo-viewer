@@ -28,10 +28,15 @@
 //! - [`app`] — the only place that knows screens exist: which one is live, the
 //!   moves between them, and the keyboard and overlays over all of them.
 //!
+//! Beside them, [`keymap`]: the machinery a keyboard is written in. Every
+//! keymap is a table of bindings, and both dispatch and the help overlay are
+//! walks over it — see `HELP_PLAN.md`.
+//!
 //! This file is the entry point and nothing else.
 
 mod app;
 mod core;
+mod keymap;
 mod screens;
 
 use iced::{Size, Theme};

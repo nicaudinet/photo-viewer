@@ -258,6 +258,7 @@ pub(crate) fn lookup<S, O>(
 }
 
 /// One line of help: the keys, and what they do.
+#[derive(Clone)]
 pub(crate) struct Row {
     pub(crate) keys: String,
     pub(crate) desc: &'static str,

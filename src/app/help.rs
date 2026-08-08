@@ -12,7 +12,7 @@
 use iced::alignment::Horizontal;
 use iced::font::Weight;
 use iced::theme::palette::lighten;
-use iced::widget::{center, column, container, row, scrollable, text, Column};
+use iced::widget::{center, column, container, responsive, row, scrollable, text, Column};
 use iced::{Element, Font, Length, Theme};
 
 use crate::keymap::Row;
@@ -20,9 +20,14 @@ use crate::keymap::Row;
 use super::view::overlay_box;
 use super::{App, Message, Screen};
 
-/// How tall the overlay may grow before its list starts scrolling, so that even
-/// a long keymap leaves the photo behind it visible at the edges.
-const MAX_HEIGHT: f32 = 460.0;
+/// How much of the window the overlay leaves above and below itself. The list
+/// grows into whatever is left and scrolls once it runs out, so a tall window
+/// shows the whole keymap and a short one still reads as a panel over a photo
+/// rather than as a screen of its own.
+const MARGIN: f32 = 40.0;
+
+/// The overlay's own padding, inside the box.
+const PADDING: f32 = 16.0;
 
 /// Width of the key column. Wide enough for `⌘A` and `Space`, narrow enough
 /// that the sentences beside them stay in one block. The keys are set flush
@@ -59,17 +64,26 @@ impl App {
 }
 
 /// The overlay, over whatever the live screen has drawn.
+///
+/// Laid out against the live window rather than a fixed height: the bindings
+/// are read together, so the panel takes all the room the window can spare.
 pub(crate) fn help_overlay(app: &App) -> Element<'static, Message> {
-    let sections = app
-        .help_sections()
-        .into_iter()
-        .fold(column![].spacing(14), |body, (title, rows)| {
-            body.push(section(title, rows))
-        });
+    let sections = app.help_sections();
 
-    let panel = container(scrollable(sections)).max_height(MAX_HEIGHT);
+    responsive(move |window| {
+        let body = sections
+            .iter()
+            .cloned()
+            .fold(column![].spacing(14), |body, (title, rows)| {
+                body.push(section(title, rows))
+            });
 
-    center(container(panel).padding(16).style(overlay_box)).into()
+        let list = container(scrollable(body))
+            .max_height((window.height - 2.0 * (MARGIN + PADDING)).max(0.0));
+
+        center(container(list).padding(PADDING).style(overlay_box)).into()
+    })
+    .into()
 }
 
 /// One section of the overlay: its name, then a line per binding.

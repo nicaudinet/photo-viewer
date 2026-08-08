@@ -32,6 +32,8 @@ use iced::{keyboard, Task};
 pub(crate) use message::Message;
 pub(crate) use screen::Screen;
 
+use crate::screens::wall::WallState;
+
 use confirm::Confirm;
 
 /// The whole model: only screen-independent state lives here. Per-view state
@@ -47,6 +49,14 @@ pub(crate) struct App {
     /// swapped for one that speaks only its answers (see `App::subscription`),
     /// and `update` swallows whatever else still arrives.
     confirm: Option<Confirm>,
+    /// The wall a stack was opened from, parked while another screen is up.
+    ///
+    /// A stack is a wall over a narrowed library with the wall it came from
+    /// hung underneath it, and opening a photograph moves that library to the
+    /// single view — which would drop the chain and strand the user in a folder
+    /// of four photographs with no way back. Parking it here keeps the way out
+    /// across the trip, and hands it back when the wall returns.
+    beneath: Option<Box<WallState>>,
     /// Live modifier state, tracked from the keyboard subscription.
     ///
     /// A `button` reports only *that* it was pressed, so a click carrying
@@ -64,6 +74,7 @@ impl App {
             fullscreen: false,
             revealed: false,
             confirm: None,
+            beneath: None,
             modifiers: keyboard::Modifiers::default(),
         };
         let task = match std::env::args().nth(1) {

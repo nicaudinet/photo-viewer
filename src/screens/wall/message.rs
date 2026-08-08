@@ -91,6 +91,10 @@ pub(crate) enum WallMsg {
     Retune {
         looser: bool,
     },
+    /// Enter, or a click, on a stack: open a wall over the photos in it.
+    Descend {
+        index: usize,
+    },
     /// The tag store was written. Only ever reported when it wasn't.
     TagsSaved(Result<(), String>),
     /// One file of a batch finished.

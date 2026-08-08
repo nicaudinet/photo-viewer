@@ -53,6 +53,11 @@ pub(super) fn width_for(n: usize) -> f32 {
     n as f32 * (WALL_SPACING + TILE_WIDTH) + WALL_SPACING
 }
 
+/// The visible tiles, in order.
+pub(super) fn shown_paths(state: &WallState) -> Vec<PathBuf> {
+    state.library.paths.iter().cloned().collect()
+}
+
 /// The selected library indices, sorted — the selection is by path, but
 /// indices are what the tests reason in.
 pub(super) fn selected(state: &WallState) -> Vec<usize> {
@@ -135,6 +140,17 @@ pub(super) fn group(state: &mut WallState, bits: &[u32]) {
             entry: Some(Entry::for_test(print(*bits))),
         });
     }
+}
+
+/// Open the stack at `index` as a wall of its own.
+pub(super) fn descend(state: &mut WallState, index: usize) {
+    let _ = state.update(WallMsg::Descend { index });
+}
+
+/// Trash `gone` out from under whichever wall is live.
+pub(super) fn remove(state: &mut WallState, gone: &[PathBuf]) -> bool {
+    let gone: HashSet<PathBuf> = gone.iter().cloned().collect();
+    state.removed(&gone).0
 }
 
 pub(super) fn fav(state: &mut WallState) {

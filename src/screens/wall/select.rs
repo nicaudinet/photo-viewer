@@ -67,7 +67,10 @@ impl WallState {
     /// cursor alone, because there the user moved it deliberately.
     ///
     /// `Visual` entered from `Select` therefore takes two presses to leave
-    /// entirely: one keypress must not discard a large selection.
+    /// entirely: one keypress must not discard a large selection. Inside a
+    /// stack the last rung backs out of it, so the same key that clears a
+    /// selection is the one that leaves — after the selection is gone, never
+    /// instead of it.
     pub(super) fn escape(&mut self) -> Task<Message> {
         if self.batch.is_some() {
             return self.cancel_batch();
@@ -92,7 +95,9 @@ impl WallState {
                 self.library.clear_selection();
                 self.settle()
             }
-            WallMode::Normal => Task::none(),
+            // Nothing to drop but the wall itself: inside a stack this backs
+            // out to the one underneath, and elsewhere it does nothing.
+            WallMode::Normal => self.pop(),
         }
     }
 

@@ -58,7 +58,7 @@ impl WallState {
         // request to select instead.
         let selecting = self.mode == WallMode::Select || modifiers.command() || modifiers.shift();
         if !selecting {
-            return Click::Open;
+            return self.open_or_descend(index);
         }
 
         if modifiers.shift() {
@@ -73,9 +73,20 @@ impl WallState {
         if double {
             // The first click of the pair toggled this tile and the second
             // toggled it back, so opening leaves the selection as it was.
-            Click::Open
+            self.open_or_descend(index)
         } else {
             Click::Handled(task)
+        }
+    }
+
+    /// What "open this tile" means. A photograph opens in the single view; a
+    /// stack has no single photograph to open, so it opens *into* — the same
+    /// split Enter makes.
+    fn open_or_descend(&mut self, index: usize) -> Click {
+        if self.stack_at(index) {
+            Click::Handled(self.descend(index))
+        } else {
+            Click::Open
         }
     }
 
@@ -108,6 +119,17 @@ mod tests {
         // untouched for anyone who never presses `v`.
         assert!(state.library.selection.is_empty());
         assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn a_plain_click_goes_into_a_stack() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        // The same split Enter makes: a stack has nothing to open, so a click
+        // opens it *into* rather than leaving the wall.
+        assert!(!opens(click(&mut state, 0, PLAIN)));
+        assert!(state.parent.is_some());
+        assert_eq!(state.library.all.len(), 3);
     }
 
     #[test]

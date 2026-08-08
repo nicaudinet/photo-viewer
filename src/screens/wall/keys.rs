@@ -54,6 +54,13 @@ impl WallState {
             // being painted is waiting to be committed, so it cannot also be
             // the key that leaves the wall.
             keyboard::Key::Named(Named::Enter) if self.is_visual() => WallMsg::CommitVisual,
+            // A stack has no single photograph to open, so Enter goes into it
+            // instead — a wall of its members, with this one underneath.
+            keyboard::Key::Named(Named::Enter) if self.stack_at(self.library.paths.index()) => {
+                WallMsg::Descend {
+                    index: self.library.paths.index(),
+                }
+            }
             keyboard::Key::Named(Named::Enter) => {
                 return Some(WallKey::Open(self.library.paths.index()))
             }
@@ -172,6 +179,22 @@ mod tests {
             press(&state, "-"),
             Some(WallKey::Msg(WallMsg::Retune { looser: false }))
         ));
+    }
+
+    #[test]
+    fn enter_goes_into_a_stack_instead_of_opening_it() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        // A stack has no single photograph to open.
+        assert!(matches!(
+            enter(&state),
+            Some(WallKey::Msg(WallMsg::Descend { index: 0 }))
+        ));
+
+        state.library.goto(1);
+        descend(&mut state, 1);
+        // And inside it, Enter opens photographs again.
+        assert!(matches!(enter(&state), Some(WallKey::Open(0))));
     }
 
     #[test]

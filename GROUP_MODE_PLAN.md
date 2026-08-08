@@ -157,9 +157,23 @@ range rather than opening an image), so overloading it once more to descend is
 in keeping. Esc pops back, restoring the outer wall's scroll position and
 selection, because they were never dismantled.
 
-The one thing this genuinely complicates: `App::removed` matches on the live
-screen only. With a parent chain it has to prune **both** libraries, or popping
-back reveals a wall showing files that are gone.
+The selection inside a stack is its own, starting empty and discarded on the way
+out. Inheriting one would mean Esc had to clear it before it could leave, so
+going in and straight back out would cost two presses and look like something
+had been thrown away. What *does* come back out is everything about the shared
+folder: the tags (edited in there against the same files, so the copy taken on
+the way in is the stale one) and the decoded thumbnails (a photo may have been
+rotated in there).
+
+Two things this genuinely complicates, both found in phase 6:
+
+- `App::removed` matches on the live screen only. With a parent chain it has to
+  prune **every** wall, or popping back reveals one showing files that are gone.
+  The walls underneath are pruned *quietly* — no tasks — because a task from a
+  hidden wall is answered by the live one, and would scroll it.
+- Opening a photograph moves the library to the single view, which would drop
+  the chain and strand the user in a folder of four photographs. `App` parks it
+  in `beneath` for the trip and hands it back when a wall returns.
 
 ### The threshold is tunable live
 
@@ -191,8 +205,13 @@ the dial.
 or not, the wall is still in one of those three, and every motion and selection
 key means what it always meant.
 
-Inside a stack, `g` explodes it: that one stack ungroups back into the outer
-wall, and the view pops.
+Inside a stack, `g` backs out and ungroups the wall, which leaves the
+photographs that were in the stack spread across it in place.
+
+Exploding *only* that stack was the first reading, and phase 6 rejected it: the
+split would have to survive a re-chain, and a re-chain happens after every
+trash, filter change and turn of the dial. Keeping a manual split alive across
+those is exactly the machinery "nothing is persisted" set out not to build.
 
 ## Tile rendering
 
@@ -227,7 +246,7 @@ star's, so a selected, favourited stack shows all three at once.
 | Key | Where | Means |
 |---|---|---|
 | `g` | wall | toggle grouping |
-| `g` | inside a stack | explode this stack, pop |
+| `g` | inside a stack | pop, and ungroup the wall |
 | `+` / `-` | wall, grouped | loosen / tighten, re-group |
 | Enter | wall, on a stack | descend into it |
 | Esc | inside a stack | pop (after the usual selection ladder) |

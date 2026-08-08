@@ -47,6 +47,9 @@ impl App {
             (path, None)
         };
 
+        // A new folder has no wall to come back out to.
+        self.beneath = None;
+
         match load_library(&dir) {
             Ok(Some(mut lib)) => match target {
                 // A file: open it directly in single view.
@@ -81,7 +84,10 @@ impl App {
     /// thumbnail and by pressing Enter on the selection.
     pub(super) fn open_index(&mut self, index: usize) -> Task<Message> {
         match std::mem::replace(&mut self.screen, Screen::Empty) {
-            Screen::Wall(w) => {
+            Screen::Wall(mut w) => {
+                // Opening a photograph out of a stack must not throw away the
+                // way back to the folder it came from.
+                self.beneath = w.parent.take();
                 let mut library = w.library;
                 library.goto(index);
                 let mut single = SingleState::new(library);
@@ -103,11 +109,15 @@ impl App {
         match std::mem::replace(&mut self.screen, Screen::Empty) {
             Screen::Single(s) => {
                 let mut wall = WallState::new(s.library);
+                // Back to whichever wall this library belongs to — a stack, if
+                // the photograph was opened out of one.
+                wall.parent = self.beneath.take();
                 let task = wall.enter();
                 self.screen = Screen::Wall(wall);
                 task
             }
-            Screen::Wall(w) => {
+            Screen::Wall(mut w) => {
+                self.beneath = w.parent.take();
                 let mut single = SingleState::new(w.library);
                 let task = single.decode_current();
                 self.screen = Screen::Single(single);
@@ -132,6 +142,17 @@ impl App {
         if gone.is_empty() {
             return Task::none();
         }
+        // A parked wall is not on screen and cannot prune itself, but it is
+        // still the way back: left holding trashed files, it would show them
+        // again the moment it returned.
+        let orphaned = self
+            .beneath
+            .as_mut()
+            .is_some_and(|beneath| !beneath.pruned(&gone));
+        if orphaned {
+            self.beneath = None;
+        }
+
         match &mut self.screen {
             Screen::Wall(w) => match w.removed(&gone) {
                 (true, task) => task,

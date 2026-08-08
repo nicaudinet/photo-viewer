@@ -115,6 +115,7 @@ mod tests {
             fullscreen: false,
             revealed: false,
             confirm: Some(question(keys)),
+            beneath: None,
             modifiers: iced::keyboard::Modifiers::default(),
         }
     }

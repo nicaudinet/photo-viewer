@@ -98,6 +98,7 @@ impl WallState {
                 Task::none()
             }
             WallMsg::Retune { looser } => self.retune(looser),
+            WallMsg::Descend { index } => self.descend(index),
             WallMsg::TagsSaved(Ok(())) => Task::none(),
             WallMsg::TagsSaved(Err(e)) => {
                 eprintln!("Could not save tags: {e}");

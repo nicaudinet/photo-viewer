@@ -20,7 +20,7 @@
 //! | [`mouse`] | clicks on a thumbnail |
 //! | [`thumbs`] | the bounded decode scheduler |
 //! | [`rotate`] | rotating one image, and invalidating what it changed |
-//! | [`group`] | the fingerprint pass behind `g`, and the stacks it makes |
+//! | [`group`] | the fingerprint pass behind `g`, its stacks, and going into one |
 //! | [`queue`] | an operation over the whole selection, as a plain queue |
 //! | [`batch`] | driving that queue from the wall |
 //! | [`ops`] | what that operation does to one file |
@@ -105,6 +105,14 @@ pub(crate) struct WallState {
     batch: Option<Batch>,
     /// The fingerprint pass behind `g`, while one is running.
     hashing: Option<Hashing>,
+    /// The wall this one was opened from, when this one is a stack.
+    ///
+    /// A stack is an ordinary wall over a narrowed library, which is what makes
+    /// every command work inside one for free. The chain is what Esc walks back
+    /// out along — and what [`WallState::removed`] has to prune, since a wall
+    /// down here still listing a trashed photograph would show it again the
+    /// moment it came back on screen.
+    pub(crate) parent: Option<Box<WallState>>,
     /// The grouping the wall is *not* currently showing.
     ///
     /// `g` off moves it here rather than dropping it, because it holds the
@@ -138,6 +146,7 @@ impl WallState {
             last_click: None,
             batch: None,
             hashing: None,
+            parent: None,
             grouping: None,
         }
     }
@@ -178,8 +187,23 @@ impl WallState {
                 self.stale.insert(path.clone());
             }
         }
+        // The walls underneath go first, and quietly: coming back out to one
+        // that still listed trashed files would show photographs that are gone.
+        let orphaned = self
+            .parent
+            .as_mut()
+            .is_some_and(|parent| !parent.pruned(gone));
+        if orphaned {
+            self.parent = None;
+        }
+
         if !self.library.remove(gone) {
-            return (false, Task::none());
+            // Nothing left of this stack — but the folder underneath it is a
+            // wider list, so it is only the wall that has died, not the app.
+            return match self.parent.is_some() {
+                true => (true, self.pop()),
+                false => (false, Task::none()),
+            };
         }
 
         self.desired_y = None;

@@ -1,4 +1,4 @@
-//! `g`: the fingerprint pass, and the stacks it turns into.
+//! `g`: the fingerprint pass, the stacks it turns into, and going inside one.
 //!
 //! Hashing a folder is the only expensive part of grouping, so it happens once,
 //! here, and everything after it is a pass over numbers already in hand — see
@@ -6,7 +6,7 @@
 //! batch queue before it: bounded work in flight, refilled as each result
 //! lands, with how far along it is in the mode bar and Esc to stop it.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use iced::Task;
@@ -14,6 +14,8 @@ use iced::Task;
 use crate::core::fingerprint::Fingerprint;
 use crate::core::fingerprint_cache::{self, Cache, Entry};
 use crate::core::grouping::Grouping;
+use crate::core::library::Library;
+use crate::core::pointed_list::PointedList;
 use crate::Message;
 
 use super::message::WallMsg;
@@ -132,6 +134,18 @@ impl WallState {
         if self.hashing.is_some() {
             return self.cancel_hashing();
         }
+        // Inside a stack there is nothing to group — the wall underneath is the
+        // one with stacks on it. So `g` here explodes: back out, and ungroup,
+        // which leaves those photographs spread across the wall in place.
+        //
+        // Exploding *only* this stack was the other reading. It would have to
+        // survive a re-chain, and a re-chain happens after every trash, filter
+        // and turn of the dial; keeping a manual split alive across those is
+        // the machinery `GROUP_MODE_PLAN.md` set out not to build.
+        if self.parent.is_some() {
+            let popped = self.pop();
+            return Task::batch([popped, self.toggle_grouping()]);
+        }
         if self.library.grouping.is_some() {
             self.grouping = self.library.set_grouping(None);
             return self.regrouped();
@@ -143,6 +157,114 @@ impl WallState {
             return self.regrouped();
         }
         self.start_hashing()
+    }
+
+    /// Whether the tile at `index` stands for more than one photograph — which
+    /// is what makes Enter, and a click, go into it rather than open it.
+    pub(crate) fn stack_at(&self, index: usize) -> bool {
+        self.library
+            .paths
+            .iter()
+            .nth(index)
+            .is_some_and(|path| self.library.stack_size(path) > 1)
+    }
+
+    /// Open a wall over the photographs the tile at `index` stands for, with
+    /// this one hung underneath it.
+    ///
+    /// A second [`WallState`] over a narrowed [`Library`], which is what makes
+    /// every wall command work inside a stack without a line of new code:
+    /// navigation, selection, ranges, rotate, favourite, trash and move all
+    /// see an ordinary folder that happens to hold four photographs.
+    pub(super) fn descend(&mut self, index: usize) -> Task<Message> {
+        if self.is_visual() || self.batch.is_some() || self.hashing.is_some() {
+            return Task::none();
+        }
+        let Some(path) = self.library.paths.iter().nth(index).cloned() else {
+            return Task::none();
+        };
+        let members = self.library.members(&path);
+        if members.len() < 2 {
+            return Task::none();
+        }
+        let Some(paths) = PointedList::new(members.clone()) else {
+            return Task::none();
+        };
+
+        let inside = Library {
+            // Its own, starting empty and discarded on the way out. The stack
+            // is one thing to the wall underneath, so a selection in here has
+            // nothing to say out there — and starting clean means Esc leaves in
+            // one press rather than clearing something first.
+            selection: HashSet::new(),
+            all: members.clone(),
+            paths,
+            image_dir: self.library.image_dir.clone(),
+            tags: self.library.tags.clone(),
+            // A stack is already a handful of near-identical photographs.
+            // Narrowing it further, or stacking it again, says nothing.
+            filter: None,
+            grouping: None,
+        };
+
+        let mut inside = WallState::new(inside);
+        // The window has not changed size, so the wall inside can be laid out
+        // on its first frame rather than after a round trip through `measure`.
+        inside.viewport = self.viewport;
+        let outside = std::mem::replace(self, inside);
+        self.parent = Some(Box::new(outside));
+        self.enter()
+    }
+
+    /// Back out to the wall underneath, or do nothing if this is the folder.
+    ///
+    /// Its scroll position, cursor and selection were never dismantled, so they
+    /// need no restoring. What does need carrying back is everything the wall
+    /// inside changed about the folder they share.
+    pub(super) fn pop(&mut self) -> Task<Message> {
+        let Some(outside) = self.parent.take() else {
+            return Task::none();
+        };
+        let inside = std::mem::replace(self, *outside);
+
+        // The tags were edited against the same folder and already written to
+        // disk, so the copy taken on the way in is the stale one — and the next
+        // tag change out here would write it back over them. The selection is
+        // the opposite case: it is this wall's own scratch, and the one out
+        // here was never dismantled.
+        self.library.tags = inside.library.tags;
+        // Photographs may have been rotated in there, which makes the decodes
+        // from inside the fresh ones.
+        self.thumbs.extend(inside.thumbs);
+        self.ratios.extend(inside.ratios);
+        // Decodes dispatched before descending landed inside, if they landed at
+        // all. Forget they were ever out, so `schedule` can ask again.
+        self.in_flight.clear();
+
+        // Tags may have changed under the filter, and photographs may have gone.
+        self.library.refilter();
+        Task::batch([self.settle(), self.resettled()])
+    }
+
+    /// Drop `gone` from a wall that is not on screen, and from every wall under
+    /// it. `false` if nothing is left of it.
+    ///
+    /// Produces no tasks, deliberately. Nothing here is being drawn, and a task
+    /// from a hidden wall would be answered by the live one — scrolling it, or
+    /// re-laying it around a folder it is not showing.
+    pub(crate) fn pruned(&mut self, gone: &HashSet<PathBuf>) -> bool {
+        for path in gone {
+            self.thumbs.remove(path);
+            self.ratios.remove(path);
+        }
+        let orphaned = self
+            .parent
+            .as_mut()
+            .is_some_and(|parent| !parent.pruned(gone));
+        if orphaned {
+            self.parent = None;
+        }
+        self.library.remove(gone)
     }
 
     /// `+` / `-`: change how alike two photos have to be, and re-chain.
@@ -262,7 +384,7 @@ impl WallState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::library::RangeOp;
+    use crate::core::library::{RangeOp, Selected};
     use crate::screens::wall::fixture::*;
     use crate::screens::wall::select::WallMode;
 
@@ -427,6 +549,163 @@ mod tests {
         let _ = state.update(WallMsg::Retune { looser: true });
         assert_eq!(state.library.paths.len(), 6);
         assert!(state.library.grouping.is_none());
+    }
+
+    // --- Inside a stack ---
+
+    /// A wall of six, stacked three and three, with the first stack open.
+    fn inside_a_stack() -> (WallState, Vec<PathBuf>) {
+        let mut state = wall(&[200.0; 6], 1);
+        let photos: Vec<PathBuf> = state.library.photos().cloned().collect();
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        descend(&mut state, 0);
+        (state, photos)
+    }
+
+    #[test]
+    fn enter_on_a_stack_opens_a_wall_of_its_photos() {
+        let (state, photos) = inside_a_stack();
+        assert_eq!(state.library.all, photos[..3].to_vec());
+        assert!(state.parent.is_some());
+        // An ordinary wall over a narrower folder, which is what makes every
+        // command work in here without a line of new code.
+        assert!(state.library.grouping.is_none());
+        assert_eq!(state.library.filter, None);
+    }
+
+    #[test]
+    fn enter_on_a_photograph_inside_a_stack_does_not_go_deeper() {
+        let (mut state, _) = inside_a_stack();
+        // There are no stacks in here to open, so nothing to descend into.
+        descend(&mut state, 1);
+        assert_eq!(state.library.all.len(), 3);
+    }
+
+    #[test]
+    fn esc_backs_out_of_a_stack() {
+        let (mut state, photos) = inside_a_stack();
+        let _ = state.update(WallMsg::Escape);
+
+        assert!(state.parent.is_none());
+        assert_eq!(state.library.all, photos);
+        assert_eq!(state.library.paths.len(), 2);
+    }
+
+    #[test]
+    fn esc_clears_a_selection_before_it_leaves() {
+        let (mut state, _) = inside_a_stack();
+        let _ = state.update(WallMsg::SelectAll);
+
+        let _ = state.update(WallMsg::Escape);
+        // One keypress must not both discard a selection and leave the wall it
+        // was made on.
+        assert!(state.parent.is_some());
+        assert!(state.library.selection.is_empty());
+
+        let _ = state.update(WallMsg::Escape);
+        assert!(state.parent.is_none());
+    }
+
+    #[test]
+    fn a_stack_opens_with_nothing_selected() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        let _ = state.update(WallMsg::ToggleCursor);
+        descend(&mut state, 0);
+
+        // The selection in here is this wall's own. Inheriting one would mean
+        // Esc had to clear it before it could leave, so going in and straight
+        // back out would take two presses and appear to have thrown something
+        // away.
+        assert!(state.library.selection.is_empty());
+        assert_eq!(state.mode, WallMode::Normal);
+    }
+
+    #[test]
+    fn a_selection_made_inside_stays_inside() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        let tile = state.library.current().clone();
+        let _ = state.update(WallMsg::ToggleCursor);
+        descend(&mut state, 0);
+
+        state.library.goto(1);
+        let _ = state.update(WallMsg::ToggleCursor);
+        let _ = state.update(WallMsg::Escape); // clears it
+        let _ = state.update(WallMsg::Escape); // leaves
+
+        // The wall underneath was never dismantled, so what was selected on it
+        // is still selected on it.
+        assert!(state.parent.is_none());
+        assert_eq!(state.library.selected(&tile), Selected::All);
+        assert_eq!(state.mode, WallMode::Select);
+    }
+
+    #[test]
+    fn a_favourite_made_inside_is_still_there_outside() {
+        let (mut state, _) = inside_a_stack();
+        fav(&mut state);
+        let _ = state.update(WallMsg::Escape);
+
+        // The tags were written against the shared folder, so the copy the
+        // outer wall carried in is the stale one — and the next tag change out
+        // here would write it back over them.
+        assert_eq!(starred(&state), vec![0]);
+    }
+
+    #[test]
+    fn trashing_inside_a_stack_prunes_the_wall_underneath() {
+        let (mut state, photos) = inside_a_stack();
+        assert!(remove(&mut state, &photos[1..2]));
+        assert_eq!(state.library.all.len(), 2);
+
+        let _ = state.update(WallMsg::Escape);
+        // Coming back out to a wall still listing it would show a photograph
+        // that is not there.
+        assert!(!state.library.all.contains(&photos[1]));
+        assert_eq!(state.library.all.len(), 5);
+    }
+
+    #[test]
+    fn trashing_the_last_photo_of_a_stack_backs_out_of_it() {
+        let (mut state, photos) = inside_a_stack();
+        // The stack is gone, but the folder underneath it is not: this is the
+        // wall dying, not the app running out of photographs.
+        assert!(remove(&mut state, &photos[..3]));
+        assert!(state.parent.is_none());
+        assert_eq!(state.library.all, photos[3..].to_vec());
+        assert_eq!(state.library.paths.len(), 1);
+    }
+
+    #[test]
+    fn trashing_the_whole_folder_from_inside_a_stack_reports_an_empty_wall() {
+        let mut state = wall(&[200.0; 3], 1);
+        let photos: Vec<PathBuf> = state.library.photos().cloned().collect();
+        group(&mut state, &[0, 1, 2]);
+        descend(&mut state, 0);
+        // Nothing anywhere in the chain: the caller has to fall back to the
+        // empty screen.
+        assert!(!remove(&mut state, &photos));
+    }
+
+    #[test]
+    fn g_inside_a_stack_backs_out_and_ungroups() {
+        let (mut state, photos) = inside_a_stack();
+        let _ = state.update(WallMsg::ToggleGrouping);
+
+        assert!(state.parent.is_none());
+        assert!(state.library.grouping.is_none());
+        // Which leaves the photographs that were in the stack spread across the
+        // wall where they belong.
+        assert_eq!(shown_paths(&state), photos);
+    }
+
+    #[test]
+    fn the_dial_does_nothing_inside_a_stack() {
+        let (mut state, _) = inside_a_stack();
+        let _ = state.update(WallMsg::Retune { looser: true });
+        assert_eq!(state.library.paths.len(), 3);
+        assert!(state.parent.is_some());
     }
 
     #[test]

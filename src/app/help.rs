@@ -70,10 +70,6 @@ pub(crate) fn help_overlay(app: &App) -> Element<'static, Message> {
     let panel = column![
         text("What you can do here").size(22),
         container(scrollable(sections)).max_height(MAX_HEIGHT),
-        // The one thing about the overlay that its own rows cannot say.
-        text("Any of these acts and closes this list")
-            .size(13)
-            .style(text::secondary),
     ]
     .spacing(16);
 

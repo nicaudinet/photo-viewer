@@ -7,7 +7,6 @@
 use iced::window::Mode;
 use iced::Task;
 
-use crate::core::library::IMAGE_EXTENSIONS;
 use crate::screens::wall::Click;
 
 use super::{App, Message, Screen};
@@ -99,19 +98,10 @@ impl App {
                 // share or an iCloud folder it then has to list before it can
                 // draw — seconds, on a bad day, for a place nobody asked for.
                 let dir = self.library().map(|lib| lib.image_dir.clone());
+                // The panel is built here, on the main thread, and only its
+                // answer is awaited off it.
                 Task::perform(
-                    async move {
-                        let mut dialog = rfd::AsyncFileDialog::new()
-                            .set_title("Select an image to open")
-                            .add_filter("Images", &IMAGE_EXTENSIONS);
-                        if let Some(dir) = dir {
-                            dialog = dialog.set_directory(dir);
-                        }
-                        dialog
-                            .pick_file()
-                            .await
-                            .map(|handle| handle.path().to_path_buf())
-                    },
+                    crate::core::platform::pick_open_target(dir),
                     Message::OpenFilePicked,
                 )
             }

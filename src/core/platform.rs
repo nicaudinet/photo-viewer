@@ -17,7 +17,10 @@
 //! on the next run-loop pass, after that notification, so this also catches the
 //! double-click-to-launch case.
 
+use std::future::Future;
 use std::path::PathBuf;
+
+use crate::core::library::IMAGE_EXTENSIONS;
 
 /// Register any platform open-file hooks. Call once, before the event loop
 /// starts. No-op off macOS.
@@ -40,6 +43,40 @@ pub fn prewarm_file_dialog() {
     macos::prewarm_file_dialog();
 }
 
+/// Ask the user for something to open: a photograph, or a folder of them.
+///
+/// One panel answers both, because [`crate::app::App::open`] takes both — a
+/// folder lands on the wall, a file in the single view. rfd cannot express that
+/// (its panels choose files or folders, never both), hence the panel built by
+/// hand on macOS; elsewhere it falls back to rfd's file-only picker.
+///
+/// Must be called from the main thread — panels are main-thread-only, and iced
+/// runs `update` there. The panel goes up as this is called; the future it hands
+/// back resolves when the user closes it.
+pub fn pick_open_target(dir: Option<PathBuf>) -> impl Future<Output = Option<PathBuf>> + Send {
+    #[cfg(target_os = "macos")]
+    {
+        let answer = macos::pick_open_target(dir, &IMAGE_EXTENSIONS);
+        // The sender is dropped without a value only if the panel never opened.
+        async move { answer.await.unwrap_or(None) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        async move {
+            let mut dialog = rfd::AsyncFileDialog::new()
+                .set_title("Select an image to open")
+                .add_filter("Images", &IMAGE_EXTENSIONS);
+            if let Some(dir) = dir {
+                dialog = dialog.set_directory(dir);
+            }
+            dialog
+                .pick_file()
+                .await
+                .map(|handle| handle.path().to_path_buf())
+        }
+    }
+}
+
 /// Take (and clear) the paths the platform has delivered since the last call.
 /// Always empty off macOS.
 pub fn take_open_files() -> Vec<PathBuf> {
@@ -59,13 +96,16 @@ mod macos {
     use std::path::PathBuf;
     use std::sync::Mutex;
 
+    use block2::RcBlock;
     use objc2::rc::Retained;
     use objc2::runtime::NSObject;
     use objc2::{define_class, msg_send, sel, AnyThread, MainThreadMarker};
-    use objc2_app_kit::NSOpenPanel;
+    use objc2_app_kit::{NSApplication, NSModalResponse, NSModalResponseOK, NSOpenPanel};
     use objc2_foundation::{
-        NSAppleEventDescriptor, NSAppleEventManager, NSData, NSNotificationCenter, NSString, NSURL,
+        NSAppleEventDescriptor, NSAppleEventManager, NSArray, NSData, NSNotificationCenter,
+        NSString, NSURL,
     };
+    use tokio::sync::oneshot;
 
     /// FourCharCode (OSType) from a 4-byte tag, e.g. `b"odoc"`.
     const fn fourcc(tag: &[u8; 4]) -> u32 {
@@ -221,6 +261,69 @@ mod macos {
                 *slot = Some(NSOpenPanel::openPanel(mtm));
             }
         });
+    }
+
+    /// Put up an open panel that takes an image *or* a folder, and hand back
+    /// the answer down a channel.
+    ///
+    /// `setCanChooseDirectories` is the whole point: with it a folder is a
+    /// thing the panel can return, not only somewhere to descend into. Files
+    /// outside `extensions` are greyed out; folders stay pickable regardless.
+    pub(super) fn pick_open_target(
+        dir: Option<PathBuf>,
+        extensions: &[&str],
+    ) -> oneshot::Receiver<Option<PathBuf>> {
+        let (tx, rx) = oneshot::channel();
+        // Panels are main-thread-only. Off it there is nothing to show, so
+        // answer as a cancelled panel would.
+        let Some(mtm) = MainThreadMarker::new() else {
+            let _ = tx.send(None);
+            return rx;
+        };
+
+        let panel = NSOpenPanel::openPanel(mtm);
+        panel.setCanChooseFiles(true);
+        panel.setCanChooseDirectories(true);
+        panel.setAllowsMultipleSelection(false);
+        // Modern panels don't draw their title bar, so the message is the only
+        // line the user actually reads.
+        panel.setMessage(Some(&NSString::from_str(
+            "Select an image, or a folder of images",
+        )));
+        let types: Vec<_> = extensions.iter().map(|e| NSString::from_str(e)).collect();
+        // Superseded by allowedContentTypes, which would pull in
+        // objc2-uniform-type-identifiers to say the same three extensions.
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&NSArray::from_retained_slice(&types)));
+        if let Some(dir) = dir.as_deref().and_then(|d| d.to_str()) {
+            let url = NSURL::fileURLWithPath_isDirectory(&NSString::from_str(dir), true);
+            panel.setDirectoryURL(Some(&url));
+        }
+
+        // The block's type says it may run more than once (it will not), so the
+        // sender has to be taken out from behind a cell rather than moved.
+        let sender = RefCell::new(Some(tx));
+        let answering = panel.clone();
+        let handler = RcBlock::new(move |response: NSModalResponse| {
+            let picked = (response == NSModalResponseOK)
+                .then(|| answering.URLs().iter().next().and_then(|url| url.path()))
+                .flatten()
+                .map(|path| PathBuf::from(path.to_string()));
+            if let Some(tx) = sender.borrow_mut().take() {
+                let _ = tx.send(picked);
+            }
+        });
+
+        // A sheet on the app's window, matching the destination panel (rfd puts
+        // that one up the same way). Windowless — nothing is on screen yet — it
+        // has to stand on its own.
+        let app = NSApplication::sharedApplication(mtm);
+        let window = app.mainWindow().or_else(|| app.windows().firstObject());
+        match window {
+            Some(window) => panel.beginSheetModalForWindow_completionHandler(&window, &handler),
+            None => panel.beginWithCompletionHandler(&handler),
+        }
+        rx
     }
 
     pub(super) fn take() -> Vec<PathBuf> {

@@ -21,7 +21,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 jpeg-decoder = "0.3"
 # spawn_blocking for CPU-bound decode; time for the delayed loading indicator
 # and the empty-view fallback timer.
-tokio = { version = "1", features = ["rt", "time"] }
+# `sync` carries the native open panel's answer back to the awaiting Task.
+tokio = { version = "1", features = ["rt", "time", "sync"] }
 # Native directory picker (save-favourites destination).
 rfd = "0.15"
 trash = "5.2.6"
@@ -30,10 +31,15 @@ trash = "5.2.6"
 # Event, not on argv. We register an NSAppleEventManager handler for it.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-# NSOpenPanel, only to build one at startup and warm AppKit's out-of-process
-# panel service — see core::platform::prewarm_file_dialog.
+# The open panel's completion handler is an Objective-C block.
+block2 = "0.6"
+# NSOpenPanel, to warm AppKit's out-of-process panel service at startup and to
+# run the open panel itself — rfd's cannot take a file *or* a folder. See
+# core::platform::{prewarm_file_dialog, pick_open_target}.
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
+    "block2",
+    "NSApplication",
     "NSOpenPanel",
     "NSSavePanel",
     "NSPanel",
@@ -41,6 +47,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSResponder",
 ] }
 objc2-foundation = { version = "0.3", features = [
+    "NSArray",
     "NSAppleEventManager",
     "NSAppleEventDescriptor",
     "NSString",

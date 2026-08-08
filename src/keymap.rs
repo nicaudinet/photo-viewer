@@ -24,8 +24,8 @@ pub(crate) struct Chord {
     key: Press,
     mods: Mods,
     /// Whether the help shows this chord. `false` for a second spelling of the
-    /// same press — a bare `R` beside `⇧R` — which is a platform detail and not
-    /// something to teach.
+    /// same press — the bare `R` beside the shifted one — which is a platform
+    /// detail and not something to teach.
     shown: bool,
 }
 
@@ -57,8 +57,9 @@ impl Chord {
         }
     }
 
-    /// A shifted character, named by what it produces: `⇧R` is `shift('R')`,
-    /// and `?` — shift and `/` on a US layout — is `shift('?')`.
+    /// A shifted character, named by what it produces: `R` is `shift('R')`,
+    /// and `?` — shift and `/` on a US layout — is `shift('?')`. Written as the
+    /// capital alone, because a capital *is* how a shifted letter is written.
     pub(crate) const fn shift(c: char) -> Self {
         Self {
             key: Press::Char(c),
@@ -153,8 +154,9 @@ impl Chord {
             Press::Named(named) => named_label(named).to_string(),
         };
         match self.mods {
-            Mods::None | Mods::Any => key,
-            Mods::Shift => format!("\u{21e7}{key}"),
+            // A shifted letter is written as its capital and nothing else: the
+            // capital in a column of lower-case keys already says shift.
+            Mods::None | Mods::Any | Mods::Shift => key,
             Mods::Command => format!("\u{2318}{key}"),
         }
     }
@@ -177,7 +179,9 @@ fn is_char_lowered(key: &keyboard::Key, c: char) -> bool {
 
 fn named_label(named: Named) -> &'static str {
     match named {
-        Named::Enter => "\u{21b5}",
+        // Spelled out rather than drawn: the return symbol is one more glyph to
+        // decode in a column read at a glance.
+        Named::Enter => "enter",
         Named::Escape => "Esc",
         // Lower case, like the letter keys beside them: a capital in this
         // column means shift is part of the chord. `Esc` keeps its capital as
@@ -208,6 +212,9 @@ pub(crate) struct Binding<S, O: 'static> {
     /// What the press means. Takes the state because some keys read it: Enter
     /// opens whatever the cursor is on.
     pub(crate) act: fn(&S) -> O,
+    /// Whether the help folds this binding in with the ones beside it instead of
+    /// giving it a line of its own. See [`Binding::merged`].
+    merge: bool,
 }
 
 impl<S, O> Binding<S, O> {
@@ -222,6 +229,7 @@ impl<S, O> Binding<S, O> {
             desc,
             when: |_| true,
             act,
+            merge: false,
         }
     }
 
@@ -237,6 +245,32 @@ impl<S, O> Binding<S, O> {
             desc,
             when,
             act,
+            merge: false,
+        }
+    }
+
+    /// One of a run of bindings the help shows as shared rows rather than as a
+    /// line each.
+    ///
+    /// The four movement keys are four bindings — each one goes its own way —
+    /// but they are read as one thing, and eight lines saying "move left", "move
+    /// right" is eight lines to skim for something the arrows already say. A run
+    /// of adjacent merged bindings sharing a `desc` becomes one row per chord
+    /// *position*: every binding's first chord on the first row, its second on
+    /// the second, so the arrows line up above their vim twins and the sentence
+    /// is written once, under both.
+    ///
+    /// The order of the keys on the row is the order of the bindings in the
+    /// table, which is what lets the shared sentence name the directions in a
+    /// row: `← ↓ ↑ →` against "left / down / up / right". A merged row separates
+    /// its keys by a space rather than by a slash, because the slashes are doing
+    /// the counting in the sentence beneath and a row of them above would be
+    /// read as the same list twice. Two runs that would sit next to each other
+    /// are kept apart by their sentences differing.
+    pub(crate) const fn merged(self) -> Self {
+        Self {
+            merge: true,
+            ..self
         }
     }
 }
@@ -265,25 +299,71 @@ pub(crate) struct Row {
 }
 
 /// Everything `state` can be told right now, in table order.
+///
+/// A binding is a row, except where it is [`Binding::merged`] — there a run of
+/// them shares its rows, one per chord position.
 pub(crate) fn rows<S, O>(table: &'static [Binding<S, O>], state: &S) -> Vec<Row> {
-    table
-        .iter()
-        .filter(|binding| (binding.when)(state))
-        .filter_map(|binding| {
-            let keys: Vec<String> = binding
-                .chords
-                .iter()
-                .filter(|c| c.shown)
-                .map(Chord::label)
-                .collect();
+    let mut out = Vec::new();
+    // The merged run being built: one lane of keys per row it will become, and
+    // the sentence they all stand under.
+    let mut lanes: Vec<Vec<String>> = Vec::new();
+    let mut shared = "";
+
+    for binding in table.iter().filter(|binding| (binding.when)(state)) {
+        if !binding.merge || binding.desc != shared {
+            flush(&mut lanes, shared, &mut out);
+        }
+
+        if !binding.merge {
             // Every chord hidden means a binding with nothing to show: a
             // deliberate way to keep a key working without teaching it.
-            (!keys.is_empty()).then(|| Row {
-                keys: keys.join(" / "),
-                desc: binding.desc,
-            })
-        })
+            let keys = shown_keys(binding);
+            if !keys.is_empty() {
+                out.push(Row {
+                    keys: keys.join(" / "),
+                    desc: binding.desc,
+                });
+            }
+            continue;
+        }
+
+        shared = binding.desc;
+        for (lane, chord) in binding.chords.iter().enumerate() {
+            if !chord.shown {
+                continue;
+            }
+            if lanes.len() <= lane {
+                lanes.resize(lane + 1, Vec::new());
+            }
+            lanes[lane].push(chord.label());
+        }
+    }
+
+    flush(&mut lanes, shared, &mut out);
+    out
+}
+
+/// The keys of one binding, as the help writes them, aliases left out.
+fn shown_keys<S, O>(binding: &'static Binding<S, O>) -> Vec<String> {
+    binding
+        .chords
+        .iter()
+        .filter(|c| c.shown)
+        .map(Chord::label)
         .collect()
+}
+
+/// Turn a finished merged run into its rows, and leave nothing behind.
+///
+/// Spaces between the keys, not slashes: the sentence under them is already a
+/// slashed list, and the row is read against it key for word.
+fn flush(lanes: &mut Vec<Vec<String>>, desc: &'static str, out: &mut Vec<Row>) {
+    for keys in lanes.drain(..).filter(|keys| !keys.is_empty()) {
+        out.push(Row {
+            keys: keys.join(" "),
+            desc,
+        });
+    }
 }
 
 #[cfg(test)]
@@ -385,9 +465,11 @@ mod tests {
     #[test]
     fn labels_read_as_the_keys_are_written() {
         assert_eq!(Chord::key('v').label(), "v");
-        assert_eq!(Chord::shift('R').label(), "\u{21e7}R");
+        // Shift is the capital, and nothing else beside it.
+        assert_eq!(Chord::shift('R').label(), "R");
         assert_eq!(Chord::cmd('A').label(), "\u{2318}A");
-        assert_eq!(Chord::named(Named::Enter).label(), "\u{21b5}");
+        // A word, not the return symbol.
+        assert_eq!(Chord::named(Named::Enter).label(), "enter");
         assert_eq!(Chord::named(Named::Escape).label(), "Esc");
     }
 
@@ -395,6 +477,9 @@ mod tests {
     struct Fake {
         painting: bool,
     }
+
+    /// The sentence the merged pair below shares.
+    const MOVE: &str = "left / right";
 
     const TABLE: &[Binding<Fake, &'static str>] = &[
         Binding::when(
@@ -411,15 +496,24 @@ mod tests {
             |s| !s.painting,
             |_| "open",
         ),
+        // Two directions, one sentence: the arrows on one row, the letters on
+        // the next, and the alias on neither.
         Binding::always(
             &[
                 Chord::named(Named::ArrowLeft),
                 Chord::key('h'),
                 Chord::shift('H').alias(),
             ],
-            "Left",
+            MOVE,
             |_| "left",
-        ),
+        )
+        .merged(),
+        Binding::always(
+            &[Chord::named(Named::ArrowRight), Chord::key('l')],
+            MOVE,
+            |_| "right",
+        )
+        .merged(),
     ];
 
     fn enter() -> keyboard::Event {
@@ -452,8 +546,11 @@ mod tests {
         assert_eq!(
             painting,
             vec![
-                ("\u{21b5}".to_string(), "Commit the range"),
-                ("\u{2190} / h".to_string(), "Left"),
+                ("enter".to_string(), "Commit the range"),
+                // One row per chord position, in table order, spaced rather than
+                // slashed, and the hidden `H` taking no row of its own.
+                ("\u{2190} \u{2192}".to_string(), MOVE),
+                ("h l".to_string(), MOVE),
             ]
         );
 
@@ -461,6 +558,6 @@ mod tests {
         // other mode, the other sentence.
         let normal = rows(TABLE, &Fake { painting: false });
         assert_eq!(normal[0].desc, "Open");
-        assert_eq!(normal.len(), 2);
+        assert_eq!(normal.len(), 3);
     }
 }

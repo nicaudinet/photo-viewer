@@ -40,7 +40,7 @@ impl WallState {
                     // the one whose keys they are looking for.
                     let hint = match self.library.grouping {
                         Some(_) => "+ looser \u{b7} - tighter \u{b7} g ungroup",
-                        None => "\u{21e7}F show all \u{b7} f unfavourite",
+                        None => "F show all \u{b7} f unfavourite",
                     };
                     self.bar(label, hint)
                 });
@@ -53,7 +53,7 @@ impl WallState {
                 };
                 (
                     format!("-- VISUAL ({verb}) -- {total} ({delta:+})"),
-                    "\u{21b5} commit \u{b7} Esc cancel",
+                    "enter commit \u{b7} Esc cancel",
                 )
             }
             WallMode::Select => (

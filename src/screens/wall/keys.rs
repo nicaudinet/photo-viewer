@@ -88,6 +88,12 @@ impl WallState {
 /// One entry of the wall's keyboard.
 type WallBinding = Binding<WallState, WallKey>;
 
+/// The sentence the movement rows share, and the tie between the two of them:
+/// the keys are listed in the order the words are, so which key goes which way
+/// needs no line of its own. Written once, and shared, because a row that fell
+/// out of step with the keys under it would read as a lie.
+const MOVE: &str = "left / down / up / right";
+
 /// Whether the filter can be turned either way right now.
 ///
 /// Refused while anything is selected — a filter that hid a selected photo
@@ -104,26 +110,33 @@ fn filterable(w: &WallState) -> bool {
 const WALL: &[WallBinding] = &[
     // Movement. Live in every mode: in `Visual` the cursor is the moving end of
     // the range, which is why painting needs no keys of its own.
+    //
+    // Merged, and in the order the words of `MOVE` are: the help draws the four
+    // arrows as one row and the four letters as another, under one sentence.
     Binding::always(
         &[Chord::named(Named::ArrowLeft), Chord::key('h')],
-        "Move left",
+        MOVE,
         |_| WallKey::Msg(WallMsg::Nav(Dir::Left)),
-    ),
-    Binding::always(
-        &[Chord::named(Named::ArrowRight), Chord::key('l')],
-        "Move right",
-        |_| WallKey::Msg(WallMsg::Nav(Dir::Right)),
-    ),
-    Binding::always(
-        &[Chord::named(Named::ArrowUp), Chord::key('k')],
-        "Move up a row",
-        |_| WallKey::Msg(WallMsg::Nav(Dir::Up)),
-    ),
+    )
+    .merged(),
     Binding::always(
         &[Chord::named(Named::ArrowDown), Chord::key('j')],
-        "Move down a row",
+        MOVE,
         |_| WallKey::Msg(WallMsg::Nav(Dir::Down)),
-    ),
+    )
+    .merged(),
+    Binding::always(
+        &[Chord::named(Named::ArrowUp), Chord::key('k')],
+        MOVE,
+        |_| WallKey::Msg(WallMsg::Nav(Dir::Up)),
+    )
+    .merged(),
+    Binding::always(
+        &[Chord::named(Named::ArrowRight), Chord::key('l')],
+        MOVE,
+        |_| WallKey::Msg(WallMsg::Nav(Dir::Right)),
+    )
+    .merged(),
     // Enter is the key whose meaning depends most on where the wall is: a range
     // being painted is waiting to be committed, and a stack has no single
     // photograph to open, so Enter goes into it instead.
@@ -159,7 +172,7 @@ const WALL: &[WallBinding] = &[
     ),
     Binding::when(
         &[Chord::key('v')],
-        "Paint a range to select",
+        "Select images",
         |w| !w.is_visual(),
         |_| WallKey::Msg(WallMsg::EnterVisual { op: RangeOp::Add }),
     ),
@@ -382,12 +395,15 @@ mod tests {
     ///
     /// Named by the chord rather than by how it is spelled, so a key can be
     /// rewritten in [`crate::keymap`] without a single test following it.
+    ///
+    /// Split on whitespace, which takes a row separated either way: no label has
+    /// a space in it, and a lone `/` from a slashed row matches no chord.
     fn help_for(state: &WallState, chord: Chord) -> Option<String> {
         let key = chord.label();
         state
             .bindings()
             .into_iter()
-            .find(|row| row.keys.split(" / ").any(|k| k == key))
+            .find(|row| row.keys.split_whitespace().any(|k| k == key))
             .map(|row| row.desc.to_string())
     }
 

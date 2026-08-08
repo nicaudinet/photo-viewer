@@ -42,7 +42,7 @@ impl Confirm {
             .iter()
             .enumerate()
             .map(|(i, c)| match i {
-                0 => format!("{} / \u{21b5} \u{2014} {}", c.key, c.label),
+                0 => format!("{} / enter \u{2014} {}", c.key, c.label),
                 _ => format!("{} \u{2014} {}", c.key, c.label),
             })
             .collect();

@@ -25,20 +25,28 @@ impl SingleState {
     }
 }
 
+/// The sentence the two movement rows share. There is no up or down here — the
+/// screen is a flat sequence — so the words are the sequence's own.
+const MOVE: &str = "previous / next";
+
 /// The single view's keyboard. Nothing here is guarded: a photograph on screen
 /// can always be moved away from, rotated and favourited, and this screen has
 /// no mode in which that stops being true.
 const SINGLE: &[Binding<SingleState, SingleMsg>] = &[
+    // Two rows in the help, as on the wall: the arrows, then their vim twins,
+    // in the order `MOVE` names them.
     Binding::always(
         &[Chord::named(Named::ArrowLeft), Chord::key('h')],
-        "Previous photo",
+        MOVE,
         |_| SingleMsg::Prev,
-    ),
+    )
+    .merged(),
     Binding::always(
         &[Chord::named(Named::ArrowRight), Chord::key('l')],
-        "Next photo",
+        MOVE,
         |_| SingleMsg::Next,
-    ),
+    )
+    .merged(),
     Binding::always(&[Chord::key('f')], "Favourite this photo", |_| {
         SingleMsg::ToggleFavourite
     }),

@@ -3,7 +3,7 @@
 
 use iced::alignment::Horizontal;
 use iced::widget::{center, column, container, text, Stack};
-use iced::{Background, Border, Color, Element, Theme};
+use iced::{Background, Border, Element, Theme};
 
 use crate::screens::empty::empty_view;
 
@@ -38,14 +38,12 @@ impl App {
     }
 }
 
-/// Shared translucent-panel styling for the overlays.
+/// Shared panel styling for the overlays: opaque, so nothing underneath
+/// competes with what the panel has to say.
 pub(super) fn overlay_box(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.96,
-            ..palette.background.weak.color
-        })),
+        background: Some(Background::Color(palette.background.weak.color)),
         border: Border {
             color: palette.background.strong.color,
             width: 1.0,

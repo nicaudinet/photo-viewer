@@ -217,16 +217,6 @@ impl Library {
         self.selection = self.photos().cloned().collect();
     }
 
-    pub fn invert_selection(&mut self) {
-        // Tile by tile rather than photo by photo, so that what inverts is what
-        // the user can see: a half-selected stack fills, a full one empties.
-        let tiles: Vec<PathBuf> = self.paths.iter().cloned().collect();
-        for path in tiles {
-            let on = self.selected(&path) != Selected::All;
-            self.set_selected(&path, on);
-        }
-    }
-
     pub fn clear_selection(&mut self) {
         self.selection.clear();
     }
@@ -717,29 +707,6 @@ mod tests {
     }
 
     #[test]
-    fn invert_swaps_selected_and_unselected() {
-        let f = fixture("sel-invert");
-        let mut lib = f.lib.clone();
-        lib.toggle_selected(1);
-        lib.invert_selection();
-        assert_eq!(
-            selected(&lib),
-            vec![f.images[0].clone(), f.images[2].clone()]
-        );
-    }
-
-    #[test]
-    fn inverting_nothing_selects_everything() {
-        let f = fixture("sel-invert-empty");
-        let mut lib = f.lib.clone();
-        lib.invert_selection();
-        assert_eq!(selected(&lib), f.images);
-        // And back again.
-        lib.invert_selection();
-        assert!(lib.selection.is_empty());
-    }
-
-    #[test]
     fn clear_empties_the_selection() {
         let f = fixture("sel-clear");
         let mut lib = f.lib.clone();
@@ -818,8 +785,6 @@ mod tests {
         // cannot pick one up and a batch cannot act on one.
         lib.select_all();
         assert_eq!(selected(&lib), vec![f.images[0].clone()]);
-        lib.invert_selection();
-        assert!(lib.selection.is_empty());
         lib.apply_range(0, 99, RangeOp::Add);
         assert_eq!(selected(&lib), vec![f.images[0].clone()]);
     }
@@ -1068,26 +1033,6 @@ mod tests {
         let f = grouped("group-all", &[0, 1, 2, 40]);
         let mut lib = f.lib.clone();
         lib.select_all();
-        assert_eq!(selected(&lib), f.images);
-    }
-
-    #[test]
-    fn inverting_works_tile_by_tile() {
-        let f = grouped("group-invert", &[0, 1, 2, 40]);
-        let mut lib = f.lib.clone();
-        lib.toggle_selected(0);
-        lib.invert_selection();
-        // What the user sees inverts: the stack empties, the lone photo fills.
-        assert_eq!(selected(&lib), vec![f.images[3].clone()]);
-    }
-
-    #[test]
-    fn a_partly_selected_stack_fills_when_inverted() {
-        let f = grouped("group-invert-half", &[0, 1, 2, 40]);
-        let mut lib = f.lib.clone();
-        lib.selection.insert(f.images[1].clone());
-        lib.invert_selection();
-        // It was not selected, so it becomes selected — all of it.
         assert_eq!(selected(&lib), f.images);
     }
 

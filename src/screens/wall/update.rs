@@ -69,23 +69,18 @@ impl WallState {
             WallMsg::Rotated { path, result } => self.rotated(path, result),
             WallMsg::EnterVisual { op } => self.enter_visual(op),
             WallMsg::CommitVisual => self.commit_visual(),
-            // These three edit the committed set, and `settle` would drop the
+            // Both of these edit the committed set, and `settle` would drop the
             // mode back out of `Visual` — so mid-paint they are ignored rather
             // than allowed to end the range behind the user's back. Finish or
             // cancel the range first.
             WallMsg::ToggleCursor if self.is_visual() => Task::none(),
             WallMsg::SelectAll if self.is_visual() => Task::none(),
-            WallMsg::InvertSelection if self.is_visual() => Task::none(),
             WallMsg::ToggleCursor => {
                 self.library.toggle_selected(self.library.paths.index());
                 self.settle()
             }
             WallMsg::SelectAll => {
                 self.library.select_all();
-                self.settle()
-            }
-            WallMsg::InvertSelection => {
-                self.library.invert_selection();
                 self.settle()
             }
             WallMsg::ToggleFavourite => self.favourite(),

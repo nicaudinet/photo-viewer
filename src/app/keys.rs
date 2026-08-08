@@ -8,7 +8,7 @@
 //! Outside a question the app claims only the keys that mean the same thing
 //! wherever you are — quit, fullscreen, help, and moving between screens. Every
 //! other key is offered to whichever screen is live, which is why the app's
-//! vocabulary has no word for "paint a range" or "invert the selection".
+//! vocabulary has no word for "paint a range" or "stack similar photos".
 //!
 //! Both keymaps are tables ([`crate::keymap`]), so every key carries the
 //! sentence the help shows and a guard saying when it is live.

@@ -200,12 +200,6 @@ const WALL: &[WallBinding] = &[
         |w| !w.is_visual(),
         |_| WallKey::Msg(WallMsg::SelectAll),
     ),
-    Binding::when(
-        &[Chord::key('i')],
-        "Invert the selection",
-        |w| !w.is_visual(),
-        |_| WallKey::Msg(WallMsg::InvertSelection),
-    ),
     // Everything below acts on the selection where there is one and on the
     // photograph under the cursor where there is not, so each one is written
     // twice: the key is the same, the sentence is not.

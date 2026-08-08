@@ -220,11 +220,7 @@ mod tests {
 
         // Each of these edits the committed set, so honouring it would settle
         // the mode and end the range without the user saying so.
-        for msg in [
-            WallMsg::ToggleCursor,
-            WallMsg::SelectAll,
-            WallMsg::InvertSelection,
-        ] {
+        for msg in [WallMsg::ToggleCursor, WallMsg::SelectAll] {
             let _ = state.update(msg);
             assert_eq!(
                 state.mode,
@@ -279,15 +275,11 @@ mod tests {
     }
 
     #[test]
-    fn select_all_and_invert_move_into_and_out_of_select() {
+    fn select_all_moves_into_select() {
         let mut state = wall(&[200.0; 6], 1);
         let _ = state.update(WallMsg::SelectAll);
         assert_eq!(selected(&state), vec![0, 1, 2, 3, 4, 5]);
         assert_eq!(state.mode, WallMode::Select);
-
-        let _ = state.update(WallMsg::InvertSelection);
-        assert!(state.library.selection.is_empty());
-        assert_eq!(state.mode, WallMode::Normal);
     }
 
     #[test]

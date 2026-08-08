@@ -40,9 +40,7 @@ pub(crate) enum WallMsg {
     /// Move the selection one thumbnail in `Dir`.
     Nav(Dir),
     /// `r` / `Shift+R`: rotate the selected image 90°, writing it to disk.
-    Rotate {
-        clockwise: bool,
-    },
+    Rotate { clockwise: bool },
     /// Result of a rotate. Carries its own path: the selection may have moved
     /// while the write was in flight.
     Rotated {
@@ -51,16 +49,13 @@ pub(crate) enum WallMsg {
     },
     /// `v` / `x`: start painting a range from the cursor — or, pressed while
     /// already painting one, cancel it.
-    EnterVisual {
-        op: RangeOp,
-    },
+    EnterVisual { op: RangeOp },
     /// Enter: fold the painted range into the selection.
     CommitVisual,
     /// `Space`: add or remove the single image under the cursor.
     ToggleCursor,
-    /// `Cmd+A` / `i`.
+    /// `Cmd+A`.
     SelectAll,
-    InvertSelection,
     /// `f`: favourite the selection, or the image under the cursor.
     ToggleFavourite,
     /// `Shift+F`: show only the favourites, or show everything again.
@@ -81,20 +76,13 @@ pub(crate) enum WallMsg {
     ToggleGrouping,
     /// One photo of the fingerprint pass has been hashed. `None` if it could
     /// not be read — the pass has to hear about that too, or it never ends.
-    Fingerprinted {
-        path: PathBuf,
-        entry: Option<Entry>,
-    },
+    Fingerprinted { path: PathBuf, entry: Option<Entry> },
     /// The fingerprint cache was written. Only ever reported when it wasn't.
     FingerprintsSaved(Result<(), String>),
     /// `+` / `-`: change how alike two photos have to be to stack.
-    Retune {
-        looser: bool,
-    },
+    Retune { looser: bool },
     /// Enter, or a click, on a stack: open a wall over the photos in it.
-    Descend {
-        index: usize,
-    },
+    Descend { index: usize },
     /// The tag store was written. Only ever reported when it wasn't.
     TagsSaved(Result<(), String>),
     /// One file of a batch finished.

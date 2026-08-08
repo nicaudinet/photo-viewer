@@ -25,6 +25,9 @@ pub(crate) enum WallKey {
     Open(usize),
     /// Ask before trashing the selection.
     Trash,
+    /// Ask before keeping the photograph under the cursor and trashing the
+    /// rest of the stack it is in.
+    Pick,
     /// Aim a move or copy at a folder the user picks.
     Transfer(TransferKind),
 }
@@ -74,6 +77,7 @@ impl WallState {
             keyboard::Key::Character("a") if modifiers.command() => WallMsg::SelectAll,
 
             keyboard::Key::Character("d") => return Some(WallKey::Trash),
+            keyboard::Key::Character("p") => return Some(WallKey::Pick),
             keyboard::Key::Character("m") => return Some(WallKey::Transfer(TransferKind::Move)),
             keyboard::Key::Character("c") => return Some(WallKey::Transfer(TransferKind::Copy)),
 
@@ -195,6 +199,14 @@ mod tests {
         descend(&mut state, 1);
         // And inside it, Enter opens photographs again.
         assert!(matches!(enter(&state), Some(WallKey::Open(0))));
+    }
+
+    #[test]
+    fn p_asks_the_app_because_it_needs_a_question_first() {
+        let mut state = wall(&[200.0; 6], 1);
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        descend(&mut state, 0);
+        assert!(matches!(press(&state, "p"), Some(WallKey::Pick)));
     }
 
     #[test]

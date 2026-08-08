@@ -197,9 +197,14 @@ impl WallState {
             self.parent = None;
         }
 
-        if !self.library.remove(gone) {
-            // Nothing left of this stack — but the folder underneath it is a
-            // wider list, so it is only the wall that has died, not the app.
+        // A stack that has come down to one photograph is not a stack any more,
+        // so the wall over it has nothing left to say — which is also what
+        // takes the user back out after `p`.
+        let alive = self.library.remove(gone);
+        let spent = self.parent.is_some() && self.library.all.len() <= 1;
+        if !alive || spent {
+            // The folder underneath is a wider list, so an empty stack is only
+            // the wall dying, not the app running out of photographs.
             return match self.parent.is_some() {
                 true => (true, self.pop()),
                 false => (false, Task::none()),

@@ -43,7 +43,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2192} / l", "Next image / right"),
     ("\u{2191} / k", "Wall: up a row"),
     ("\u{2193} / j", "Wall: down a row"),
-    ("\u{21b5}", "Wall: commit range, else open"),
+    ("\u{21b5}", "Wall: commit range, into a stack, else open"),
     ("w", "Wall / single (toggle)"),
     ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
     ("o", "Open file"),
@@ -57,9 +57,12 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("m", "Wall: move the selection"),
     ("c", "Wall: copy the selection"),
     ("d", "Wall: trash the selection"),
+    ("g", "Wall: stack similar photos (toggle)"),
+    ("+ / -", "Wall: looser / tighter stacks"),
+    ("p", "Stack: keep this one, trash the rest"),
     ("e", "Fullscreen (toggle)"),
     ("?", "Show help (toggle)"),
-    ("Esc", "Help, then range, then selection"),
+    ("Esc", "Help, range, selection, then leave a stack"),
     ("q", "Quit"),
 ];
 

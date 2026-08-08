@@ -35,6 +35,44 @@ impl App {
         });
     }
 
+    /// `p`: ask before keeping the photograph under the cursor and trashing
+    /// the rest of the stack it is in.
+    ///
+    /// The whole point of a stack is that its photographs are near-identical,
+    /// so the question names the one being kept as well as the count. "Trash 7
+    /// photos?" is answerable; "trash 7 of these 8 near-identical photos?" is
+    /// not, unless it says which one survives.
+    pub(super) fn ask_about_pick(&mut self) {
+        let Screen::Wall(w) = &self.screen else {
+            return;
+        };
+        let Some(rest) = w.rest_of_the_stack() else {
+            return;
+        };
+        let prompt = match rest.len() {
+            1 => "Keep this photo and move the other one to the trash?".to_string(),
+            n => format!("Keep this photo and move the other {n} to the trash?"),
+        };
+        let keeping = w.library.current().file_name().map(|name| {
+            format!(
+                "Keeping {} \u{2014} the rest of the stack goes",
+                name.to_string_lossy()
+            )
+        });
+        self.confirm = Some(Confirm {
+            prompt,
+            detail: keeping,
+            choices: vec![Choice {
+                key: 'y',
+                label: "yes",
+                // The same message `d` sends: what leaves is a list of files,
+                // and going back out of the emptied stack falls out of the wall
+                // having nothing left to show.
+                message: Message::Trash(rest),
+            }],
+        });
+    }
+
     /// Trash `paths`, off the GUI thread. What actually left the disk comes
     /// back as [`Message::Removed`], which only the app can act on: if nothing
     /// is left there is no library to show.

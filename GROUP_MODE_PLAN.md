@@ -314,6 +314,15 @@ parent chain.
 Keep the cursor photo, confirm against the real count, trash the rest, pop on
 success.
 
+The pop is not special-cased to `p`. A stack that has come down to one
+photograph is not a stack, so the wall over it has nothing left to show and
+backs out — which `p` reaches by way of the trash it asks for, and so does
+trashing all but one by hand.
+
+The question names the photograph being kept as well as the count. A stack's
+photographs are near-identical by construction, so "trash 7 of these 8" is not
+answerable unless it says which one survives.
+
 ---
 
 ## Commit order

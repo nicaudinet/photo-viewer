@@ -81,6 +81,10 @@ impl App {
                 self.ask_about_trash();
                 Task::none()
             }
+            Some(Keyed::Wall(WallKey::Pick)) => {
+                self.ask_about_pick();
+                Task::none()
+            }
             Some(Keyed::Wall(WallKey::Transfer(kind))) => self.start_transfer(kind),
         }
     }

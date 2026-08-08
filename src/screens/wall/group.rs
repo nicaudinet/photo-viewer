@@ -216,6 +216,26 @@ impl WallState {
         self.enter()
     }
 
+    /// `p`: the photographs a stack would lose to keep the one under the
+    /// cursor.
+    ///
+    /// `None` anywhere but inside a stack. Out on the folder there is nothing
+    /// to pick between — a plain thumbnail has no rest to trash, and on a stack
+    /// the user cannot see which member they would be keeping.
+    pub(crate) fn rest_of_the_stack(&self) -> Option<Vec<PathBuf>> {
+        if self.parent.is_none() || self.is_visual() || self.batch.is_some() {
+            return None;
+        }
+        let keep = self.library.current();
+        let rest: Vec<PathBuf> = self
+            .library
+            .photos()
+            .filter(|path| *path != keep)
+            .cloned()
+            .collect();
+        (!rest.is_empty()).then_some(rest)
+    }
+
     /// Back out to the wall underneath, or do nothing if this is the folder.
     ///
     /// Its scroll position, cursor and selection were never dismantled, so they
@@ -686,6 +706,61 @@ mod tests {
         // Nothing anywhere in the chain: the caller has to fall back to the
         // empty screen.
         assert!(!remove(&mut state, &photos));
+    }
+
+    #[test]
+    fn p_names_every_photo_of_the_stack_but_the_one_under_the_cursor() {
+        let (mut state, photos) = inside_a_stack();
+        state.library.goto(1);
+        assert_eq!(
+            state.rest_of_the_stack(),
+            Some(vec![photos[0].clone(), photos[2].clone()])
+        );
+    }
+
+    #[test]
+    fn p_means_nothing_out_on_the_folder() {
+        let mut state = wall(&[200.0; 6], 1);
+        // Not on a plain thumbnail, which has no rest to trash.
+        assert_eq!(state.rest_of_the_stack(), None);
+
+        group(&mut state, &[0, 1, 2, 40, 41, 42]);
+        // And not on a stack from outside it either: the user cannot see which
+        // of its photographs they would be keeping.
+        assert_eq!(state.rest_of_the_stack(), None);
+    }
+
+    #[test]
+    fn p_means_nothing_while_painting() {
+        let (mut state, _) = inside_a_stack();
+        enter_visual(&mut state, RangeOp::Add);
+        // An uncommitted range has no settled meaning, and this one would trash
+        // files either way.
+        assert_eq!(state.rest_of_the_stack(), None);
+    }
+
+    #[test]
+    fn keeping_one_photo_backs_out_of_the_stack() {
+        let (mut state, photos) = inside_a_stack();
+        let rest = state.rest_of_the_stack().unwrap();
+        assert!(remove(&mut state, &rest));
+
+        // What is left is one photograph, so there is no stack to be inside of.
+        assert!(state.parent.is_none());
+        assert_eq!(state.library.all.len(), 4);
+        assert_eq!(state.library.stack_size(&photos[0]), 1);
+        assert_eq!(state.library.paths.len(), 2);
+    }
+
+    #[test]
+    fn a_stack_is_only_spent_once_it_is_down_to_one() {
+        let (mut state, photos) = inside_a_stack();
+        assert!(remove(&mut state, &photos[..1]));
+        // Two photographs are still a pile worth being inside.
+        assert!(state.parent.is_some());
+
+        assert!(remove(&mut state, &photos[1..2]));
+        assert!(state.parent.is_none());
     }
 
     #[test]

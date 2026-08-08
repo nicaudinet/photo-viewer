@@ -76,7 +76,7 @@ it means the same thing whatever the window width.
 | `x` | Paint a range that removes from it (needs a selection) |
 | `Enter` | Commit the painted range |
 | `Space` | Select or deselect the image under the cursor |
-| `Cmd+A` | Select every image |
+| `a` | Select every image |
 | `Esc` | Stop a running operation, then cancel the range, then clear |
 
 #### Acting on a selection

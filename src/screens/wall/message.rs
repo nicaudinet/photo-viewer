@@ -54,7 +54,7 @@ pub(crate) enum WallMsg {
     CommitVisual,
     /// `Space`: add or remove the single image under the cursor.
     ToggleCursor,
-    /// `Cmd+A`.
+    /// `a`.
     SelectAll,
     /// `f`: favourite the selection, or the image under the cursor.
     ToggleFavourite,

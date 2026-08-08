@@ -29,9 +29,8 @@ const MARGIN: f32 = 40.0;
 /// The overlay's own padding, inside the box.
 const PADDING: f32 = 16.0;
 
-/// Width of the key column. Wide enough for `⌘A` and `space`, and for a
-/// movement row's four keys, narrow enough that the sentences beside them stay
-/// in one block. The keys are set flush right inside it, so however long the
+/// Width of the key column. Wide enough for `space` and for a movement row's
+/// four keys, narrow enough that the sentences beside them stay in one block. The keys are set flush right inside it, so however long the
 /// spelling, it ends up against the sentence it belongs to rather than adrift
 /// from it.
 const KEY_WIDTH: f32 = 84.0;

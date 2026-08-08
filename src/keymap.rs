@@ -31,7 +31,7 @@ pub(crate) struct Chord {
 
 #[derive(Clone, Copy)]
 enum Press {
-    /// The character as the user thinks of it: `v`, `?`, `+`, `A` for `⌘A`.
+    /// The character as the user thinks of it: `v`, `?`, `+`, `R` for shift-`r`.
     Char(char),
     Named(Named),
 }
@@ -40,7 +40,6 @@ enum Press {
 enum Mods {
     None,
     Shift,
-    Command,
     /// Whatever it took to type the character. `+` is shift and `=` on one
     /// layout and a key of its own on another, and neither spelling is worth
     /// teaching as a chord.
@@ -74,15 +73,6 @@ impl Chord {
         Self {
             key: Press::Char(c),
             mods: Mods::Any,
-            shown: true,
-        }
-    }
-
-    /// A character with command held. Named uppercase, as `⌘A` is written.
-    pub(crate) const fn cmd(c: char) -> Self {
-        Self {
-            key: Press::Char(c),
-            mods: Mods::Command,
             shown: true,
         }
     }
@@ -139,25 +129,23 @@ impl Chord {
             (Press::Char(c), Mods::Any) => {
                 !modifiers.command() && (is_char(key, c) || is_char(modified_key, c))
             }
-            (Press::Char(c), Mods::Command) => {
-                modifiers.command() && (is_char_lowered(key, c) || is_char_lowered(modified_key, c))
-            }
         }
     }
 
     /// How the help writes this chord. The only place a key's spelling is
     /// decided — anything wanting to name a key asks here rather than writing
     /// the string out again.
+    /// How the help writes this chord. The only place a key's spelling is
+    /// decided — anything wanting to name a key asks here rather than writing
+    /// the string out again.
+    ///
+    /// Always the key itself: a shifted letter is its capital and nothing else,
+    /// because a capital in a column of lower-case keys already says shift, and
+    /// no chord takes a modifier there is anything else to draw.
     pub(crate) fn label(&self) -> String {
-        let key = match self.key {
+        match self.key {
             Press::Char(c) => c.to_string(),
             Press::Named(named) => named_label(named).to_string(),
-        };
-        match self.mods {
-            // A shifted letter is written as its capital and nothing else: the
-            // capital in a column of lower-case keys already says shift.
-            Mods::None | Mods::Any | Mods::Shift => key,
-            Mods::Command => format!("\u{2318}{key}"),
         }
     }
 }
@@ -168,7 +156,7 @@ fn is_char(key: &keyboard::Key, c: char) -> bool {
 }
 
 /// Whether `key` is `c` ignoring case, for the chords named by their uppercase
-/// form: `⌘A` arrives as `a`, and `⇧R` as `r` with shift held.
+/// form: `R` arrives as `r` with shift held.
 fn is_char_lowered(key: &keyboard::Key, c: char) -> bool {
     matches!(
         key.as_ref(),
@@ -429,11 +417,12 @@ mod tests {
         assert!(!question.matches(&plain("/")));
     }
 
+    /// Command is nobody's modifier here, so a key with it held is not that key:
+    /// the window manager's shortcuts must not double as the wall's.
     #[test]
-    fn a_command_chord_needs_command() {
-        let all = Chord::cmd('A');
-        assert!(all.matches(&press(ch("a"), ch("a"), Modifiers::COMMAND)));
-        assert!(!all.matches(&plain("a")));
+    fn a_chord_is_not_taken_with_command_held() {
+        assert!(!Chord::key('a').matches(&press(ch("a"), ch("a"), Modifiers::COMMAND)));
+        assert!(!Chord::sym('+').matches(&press(ch("+"), ch("+"), Modifiers::COMMAND)));
     }
 
     #[test]
@@ -467,7 +456,6 @@ mod tests {
         assert_eq!(Chord::key('v').label(), "v");
         // Shift is the capital, and nothing else beside it.
         assert_eq!(Chord::shift('R').label(), "R");
-        assert_eq!(Chord::cmd('A').label(), "\u{2318}A");
         // A word, not the return symbol.
         assert_eq!(Chord::named(Named::Enter).label(), "enter");
         assert_eq!(Chord::named(Named::Escape).label(), "Esc");

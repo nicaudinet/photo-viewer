@@ -64,7 +64,7 @@ pub struct Library {
     /// A filter narrows *this list* rather than being applied where images are
     /// drawn. That is the whole of why a filter cannot hide a selected photo:
     /// there is no list in which a hidden image can be reached, so nothing —
-    /// not `Cmd+A`, not a painted range, not a batch — can act on one. The
+    /// not `a`, not a painted range, not a batch — can act on one. The
     /// alternative, filtering at the point of drawing, leaves every one of
     /// those free to touch images the user cannot see.
     pub paths: PointedList<PathBuf>,

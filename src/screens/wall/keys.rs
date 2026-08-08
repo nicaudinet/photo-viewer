@@ -198,7 +198,7 @@ const WALL: &[WallBinding] = &[
         |_| WallKey::Msg(WallMsg::EnterVisual { op: RangeOp::Add }),
     ),
     Binding::when(
-        &[Chord::cmd('A')],
+        &[Chord::key('a')],
         "Select all",
         |w| !w.is_visual(),
         |_| WallKey::Msg(WallMsg::SelectAll),

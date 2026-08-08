@@ -89,6 +89,12 @@ impl WallState {
         Task::batch(tasks)
     }
 
+    /// A decode is in flight. The wall is doing work the user can see land, so
+    /// it is a poor moment to start anything that blocks the main thread.
+    pub(crate) fn is_decoding(&self) -> bool {
+        !self.in_flight.is_empty()
+    }
+
     /// A path still needs decoding: not cached and not already dispatched.
     pub(super) fn needs_decode(&self, path: &PathBuf) -> bool {
         !self.thumbs.contains_key(path) && !self.in_flight.contains(path)

@@ -26,6 +26,20 @@ pub fn install_open_file_handler() {
     macos::install();
 }
 
+/// Pay the native file panel's one-off startup cost now, so the first `o` does
+/// not. Must be called on the main thread; no-op off macOS.
+///
+/// AppKit runs the open/save panel out of process, in
+/// `com.apple.appkit.xpc.openAndSavePanelService`. The first `NSOpenPanel` of a
+/// process launches that service and waits for it: measured at ~0.8s, against
+/// ~0.1s for every one after it. That whole second lands on the main thread —
+/// the app is frozen for it — so it is spent once at startup, when nothing is
+/// waiting, rather than the first time the user asks to open a file.
+pub fn prewarm_file_dialog() {
+    #[cfg(target_os = "macos")]
+    macos::prewarm_file_dialog();
+}
+
 /// Take (and clear) the paths the platform has delivered since the last call.
 /// Always empty off macOS.
 pub fn take_open_files() -> Vec<PathBuf> {
@@ -41,12 +55,14 @@ pub fn take_open_files() -> Vec<PathBuf> {
 
 #[cfg(target_os = "macos")]
 mod macos {
+    use std::cell::RefCell;
     use std::path::PathBuf;
     use std::sync::Mutex;
 
     use objc2::rc::Retained;
     use objc2::runtime::NSObject;
-    use objc2::{define_class, msg_send, sel, AnyThread};
+    use objc2::{define_class, msg_send, sel, AnyThread, MainThreadMarker};
+    use objc2_app_kit::NSOpenPanel;
     use objc2_foundation::{
         NSAppleEventDescriptor, NSAppleEventManager, NSData, NSNotificationCenter, NSString, NSURL,
     };
@@ -180,6 +196,31 @@ mod macos {
             );
         }
         std::mem::forget(handler);
+    }
+
+    // The panel built at startup, kept alive for the life of the process.
+    //
+    // Building one is what launches the panel service; holding it is what keeps
+    // the service from idling out again, which would put the whole cost back on
+    // the next open. It is never shown — rfd builds its own panel, and only
+    // inherits the warm service.
+    thread_local! {
+        static PREWARMED: RefCell<Option<Retained<NSOpenPanel>>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn prewarm_file_dialog() {
+        // Panels are main-thread-only, and this is called from `update`, which
+        // iced runs there. Off it, skip: a cold first open is the worse of the
+        // two outcomes but far from the worst.
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        PREWARMED.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(NSOpenPanel::openPanel(mtm));
+            }
+        });
     }
 
     pub(super) fn take() -> Vec<PathBuf> {

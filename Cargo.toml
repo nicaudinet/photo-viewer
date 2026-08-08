@@ -30,6 +30,16 @@ trash = "5.2.6"
 # Event, not on argv. We register an NSAppleEventManager handler for it.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# NSOpenPanel, only to build one at startup and warm AppKit's out-of-process
+# panel service — see core::platform::prewarm_file_dialog.
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSOpenPanel",
+    "NSSavePanel",
+    "NSPanel",
+    "NSWindow",
+    "NSResponder",
+] }
 objc2-foundation = { version = "0.3", features = [
     "NSAppleEventManager",
     "NSAppleEventDescriptor",
@@ -50,3 +60,4 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+

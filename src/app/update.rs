@@ -93,25 +93,41 @@ impl App {
             },
 
             Message::ToggleWall => self.toggle_wall(),
-            Message::OpenFile => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Select an image to open")
-                        .add_filter("Images", &IMAGE_EXTENSIONS)
-                        .pick_file()
-                        .await
-                        .map(|handle| handle.path().to_path_buf())
-                },
-                Message::OpenFilePicked,
-            ),
+            Message::OpenFile => {
+                // Start where the photos on screen live. Left to itself the
+                // panel reopens wherever it was last, which may be a network
+                // share or an iCloud folder it then has to list before it can
+                // draw — seconds, on a bad day, for a place nobody asked for.
+                let dir = self.library().map(|lib| lib.image_dir.clone());
+                Task::perform(
+                    async move {
+                        let mut dialog = rfd::AsyncFileDialog::new()
+                            .set_title("Select an image to open")
+                            .add_filter("Images", &IMAGE_EXTENSIONS);
+                        if let Some(dir) = dir {
+                            dialog = dialog.set_directory(dir);
+                        }
+                        dialog
+                            .pick_file()
+                            .await
+                            .map(|handle| handle.path().to_path_buf())
+                    },
+                    Message::OpenFilePicked,
+                )
+            }
             Message::OpenFilePicked(Some(file)) => self.open(file),
             Message::OpenFilePicked(None) => Task::none(),
             Message::PollOpenFiles => {
                 // Finder may hand us several files; open the last (single window).
-                match crate::core::platform::take_open_files().pop() {
+                let task = match crate::core::platform::take_open_files().pop() {
                     Some(path) => self.open(path),
                     None => Task::none(),
-                }
+                };
+                // The same tick is a good enough idle clock for the one job
+                // that wants one. Idempotent, so asking every 200ms is free
+                // after the first time it says yes.
+                self.prewarm_file_dialog();
+                task
             }
             Message::ThumbClicked(index) => {
                 let modifiers = self.modifiers;
@@ -133,6 +149,25 @@ impl App {
                 Screen::Wall(w) => w.update(m),
                 _ => Task::none(),
             },
+        }
+    }
+
+    /// Build the first native file panel, once, at a moment nobody minds.
+    ///
+    /// The panel is expensive to bring up the first time and the cost lands on
+    /// the main thread — about a second of frozen app, see
+    /// [`crate::core::platform::prewarm_file_dialog`]. So it is spent when the
+    /// window is up and nothing else is running: not during startup, where it
+    /// would only look like a slow launch, and not while thumbnails are landing,
+    /// where it would stall the wall filling in. In practice that is a second or
+    /// two after the folder settles, long before anyone reaches for `o`.
+    fn prewarm_file_dialog(&self) {
+        let busy = match &self.screen {
+            Screen::Wall(w) => w.is_decoding(),
+            _ => false,
+        };
+        if self.revealed && !busy {
+            crate::core::platform::prewarm_file_dialog();
         }
     }
 }

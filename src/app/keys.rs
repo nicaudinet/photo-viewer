@@ -178,6 +178,29 @@ const APP: &[Binding<App, Message>] = &[
     Binding::always(&[Chord::key('q')], "Quit", |_| Message::Quit),
 ];
 
+/// The keyboard while a question is up: the keys it names, and nothing else.
+fn answer_key(event: keyboard::Event) -> Option<Message> {
+    let keyboard::Event::KeyPressed { key, .. } = event else {
+        return None;
+    };
+    match key.as_ref() {
+        keyboard::Key::Named(Named::Enter) => Some(Message::ConfirmDefault),
+        keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
+        keyboard::Key::Character("n") => Some(Message::ConfirmNo),
+        // Quitting still works: a question nobody can answer must never be able
+        // to trap the user in the app.
+        keyboard::Key::Character("q") => Some(Message::Quit),
+        keyboard::Key::Character(c) => {
+            let mut chars = c.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) => Some(Message::ConfirmChoice(c)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,28 +269,5 @@ mod tests {
         // And with the help down it is no longer the app's key at all: the
         // rungs below belong to the live screen.
         assert!(lookup(APP, &app, &press(keyboard::Key::Named(Named::Escape))).is_none());
-    }
-}
-
-/// The keyboard while a question is up: the keys it names, and nothing else.
-fn answer_key(event: keyboard::Event) -> Option<Message> {
-    let keyboard::Event::KeyPressed { key, .. } = event else {
-        return None;
-    };
-    match key.as_ref() {
-        keyboard::Key::Named(Named::Enter) => Some(Message::ConfirmDefault),
-        keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
-        keyboard::Key::Character("n") => Some(Message::ConfirmNo),
-        // Quitting still works: a question nobody can answer must never be able
-        // to trap the user in the app.
-        keyboard::Key::Character("q") => Some(Message::Quit),
-        keyboard::Key::Character(c) => {
-            let mut chars = c.chars();
-            match (chars.next(), chars.next()) {
-                (Some(c), None) => Some(Message::ConfirmChoice(c)),
-                _ => None,
-            }
-        }
-        _ => None,
     }
 }

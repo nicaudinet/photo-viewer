@@ -12,12 +12,14 @@
 //! | [`update`] | routing a message to whatever answers it |
 //! | [`keys`] | the two keymaps, and the rest of the subscriptions |
 //! | [`view`] | the live screen, plus the overlays over it |
+//! | [`help`] | what can be done here, read back off the live keymaps |
 //! | [`confirm`] | a modal question and its answers |
 //! | [`destination`] | where a move or copy is aimed |
 //! | [`trash`] | sending photos to the system trash |
 
 mod confirm;
 mod destination;
+mod help;
 mod keys;
 mod message;
 mod screen;

@@ -2,11 +2,12 @@
 //! sit over any of them.
 
 use iced::alignment::Horizontal;
-use iced::widget::{center, column, container, row, text, Stack};
-use iced::{Background, Border, Color, Element, Length, Theme};
+use iced::widget::{center, column, container, text, Stack};
+use iced::{Background, Border, Color, Element, Theme};
 
 use crate::screens::empty::empty_view;
 
+use super::help::help_overlay;
 use super::{App, Message, Screen};
 
 impl App {
@@ -19,7 +20,7 @@ impl App {
 
         let mut layers: Vec<Element<'_, Message>> = vec![content];
         if self.help_open {
-            layers.push(help_overlay());
+            layers.push(help_overlay(self));
         }
         if let Some(confirm) = &self.confirm {
             layers.push(confirm_overlay(
@@ -37,37 +38,8 @@ impl App {
     }
 }
 
-/// Shown in the help overlay, in press-order.
-const SHORTCUTS: &[(&str, &str)] = &[
-    ("\u{2190} / h", "Previous image / left"),
-    ("\u{2192} / l", "Next image / right"),
-    ("\u{2191} / k", "Wall: up a row"),
-    ("\u{2193} / j", "Wall: down a row"),
-    ("\u{21b5}", "Wall: commit range, into a stack, else open"),
-    ("w", "Wall / single (toggle)"),
-    ("r / \u{21e7}R", "Rotate anticlockwise / clockwise"),
-    ("o", "Open file"),
-    ("v", "Wall: paint a range to select"),
-    ("x", "Wall: paint a range to deselect"),
-    ("Space", "Wall: select / deselect one"),
-    ("\u{2318}A", "Wall: select all"),
-    ("i", "Wall: invert selection"),
-    ("f", "Favourite (selection, or one)"),
-    ("\u{21e7}F", "Wall: show only favourites"),
-    ("m", "Wall: move the selection"),
-    ("c", "Wall: copy the selection"),
-    ("d", "Wall: trash the selection"),
-    ("g", "Wall: stack similar photos (toggle)"),
-    ("+ / -", "Wall: looser / tighter stacks"),
-    ("p", "Stack: keep this one, trash the rest"),
-    ("e", "Fullscreen (toggle)"),
-    ("?", "Show help (toggle)"),
-    ("Esc", "Help, range, selection, then leave a stack"),
-    ("q", "Quit"),
-];
-
 /// Shared translucent-panel styling for the overlays.
-fn overlay_box(theme: &Theme) -> container::Style {
+pub(super) fn overlay_box(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
         background: Some(Background::Color(Color {
@@ -81,28 +53,6 @@ fn overlay_box(theme: &Theme) -> container::Style {
         },
         ..container::Style::default()
     }
-}
-
-pub(crate) fn help_overlay() -> Element<'static, Message> {
-    let title = text("Keyboard Shortcuts").size(24);
-    let rows = SHORTCUTS
-        .iter()
-        .fold(column![].spacing(10), |col, (keys, desc)| {
-            col.push(
-                row![
-                    text(*keys).size(16).width(Length::Fixed(90.0)),
-                    text(*desc).size(16),
-                ]
-                .spacing(20),
-            )
-        });
-
-    center(
-        container(column![title, rows].spacing(18))
-            .padding(28)
-            .style(overlay_box),
-    )
-    .into()
 }
 
 /// A modal question. Everything else is swallowed while it is up (see

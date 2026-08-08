@@ -16,8 +16,8 @@ to another folder or trashed in one go. See
 
 | Key | Action |
 |-----|--------|
-| `?` | Toggle help overlay |
-| `Esc` | Close help |
+| `?` | What you can do here — the keys the live screen accepts in the mode it is in, and no others ([`HELP_PLAN.md`](HELP_PLAN.md)). Any key in the list acts and closes it |
+| `Esc` | A ladder, one rung per press: the help, then a running operation, a painted range, the selection, and finally the stack you are in |
 | `q` | Quit |
 | `e` | Toggle fullscreen |
 | `o` | Open directory (native dir picker) |

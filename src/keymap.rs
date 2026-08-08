@@ -144,8 +144,10 @@ impl Chord {
         }
     }
 
-    /// How the help writes this chord.
-    fn label(&self) -> String {
+    /// How the help writes this chord. The only place a key's spelling is
+    /// decided — anything wanting to name a key asks here rather than writing
+    /// the string out again.
+    pub(crate) fn label(&self) -> String {
         let key = match self.key {
             Press::Char(c) => c.to_string(),
             Press::Named(named) => named_label(named).to_string(),
@@ -186,7 +188,6 @@ fn named_label(named: Named) -> &'static str {
         Named::ArrowUp => "\u{2191}",
         Named::ArrowDown => "\u{2193}",
         Named::Backspace => "\u{232b}",
-        Named::Tab => "tab",
         // Nothing else is bound; a label is still better than a panic.
         _ => "?",
     }

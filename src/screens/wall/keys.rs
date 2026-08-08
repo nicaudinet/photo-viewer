@@ -378,8 +378,12 @@ mod tests {
         press_key(state, keyboard::Key::Named(Named::Enter))
     }
 
-    /// What the help would say about `key` right now, if anything.
-    fn help_for(state: &WallState, key: &str) -> Option<String> {
+    /// What the help would say about `chord` right now, if anything.
+    ///
+    /// Named by the chord rather than by how it is spelled, so a key can be
+    /// rewritten in [`crate::keymap`] without a single test following it.
+    fn help_for(state: &WallState, chord: Chord) -> Option<String> {
+        let key = chord.label();
         state
             .bindings()
             .into_iter()
@@ -475,7 +479,7 @@ mod tests {
         let state = wall(&[200.0; 6], 1);
         // Nothing to pick between, so the key is inert and unlisted.
         assert!(press(&state, "p").is_none());
-        assert_eq!(help_for(&state, "p"), None);
+        assert_eq!(help_for(&state, Chord::key('p')), None);
     }
 
     #[test]
@@ -488,51 +492,64 @@ mod tests {
     fn the_help_describes_the_wall_the_user_is_looking_at() {
         let mut state = wall(&[200.0; 6], 1);
         assert_eq!(
-            help_for(&state, "\u{21b5}"),
+            help_for(&state, Chord::named(Named::Enter)),
             Some("Open this photo".to_string())
         );
-        assert_eq!(help_for(&state, "f"), Some("Favourite this photo".into()));
-        assert_eq!(help_for(&state, "g"), Some("Stack similar photos".into()));
+        assert_eq!(
+            help_for(&state, Chord::key('f')),
+            Some("Favourite this photo".into())
+        );
+        assert_eq!(
+            help_for(&state, Chord::key('g')),
+            Some("Stack similar photos".into())
+        );
         // Nothing is selected and nothing is running, so Esc has no rung.
-        assert_eq!(help_for(&state, "Esc"), None);
-        assert_eq!(help_for(&state, "x"), None);
+        assert_eq!(help_for(&state, Chord::named(Named::Escape)), None);
+        assert_eq!(help_for(&state, Chord::key('x')), None);
 
         let _ = state.update(WallMsg::SelectAll);
         assert_eq!(
-            help_for(&state, "f"),
+            help_for(&state, Chord::key('f')),
             Some("Favourite the selection".into())
         );
-        assert_eq!(help_for(&state, "Esc"), Some("Clear the selection".into()));
         assert_eq!(
-            help_for(&state, "x"),
+            help_for(&state, Chord::named(Named::Escape)),
+            Some("Clear the selection".into())
+        );
+        assert_eq!(
+            help_for(&state, Chord::key('x')),
             Some("Paint a range to deselect".into())
         );
-        // Anchors the label the negative assertion below is written against.
-        assert!(help_for(&state, "space").is_some());
 
         enter_visual(&mut state, RangeOp::Add);
         assert_eq!(
-            help_for(&state, "\u{21b5}"),
+            help_for(&state, Chord::named(Named::Enter)),
             Some("Commit the painted range".to_string())
         );
         assert_eq!(
-            help_for(&state, "Esc"),
+            help_for(&state, Chord::named(Named::Escape)),
             Some("Cancel the painted range".into())
         );
         // A set edit mid-paint would end the range behind the user's back.
-        assert_eq!(help_for(&state, "space"), None);
+        assert_eq!(help_for(&state, Chord::named(Named::Space)), None);
     }
 
     #[test]
     fn a_stack_offers_the_way_back_out() {
         let mut state = wall(&[200.0; 6], 1);
         group(&mut state, &[0, 1, 2, 40, 41, 42]);
-        assert_eq!(help_for(&state, "g"), Some("Unstack the wall".into()));
+        assert_eq!(
+            help_for(&state, Chord::key('g')),
+            Some("Unstack the wall".into())
+        );
 
         descend(&mut state, 0);
-        assert_eq!(help_for(&state, "Esc"), Some("Leave the stack".into()));
         assert_eq!(
-            help_for(&state, "p"),
+            help_for(&state, Chord::named(Named::Escape)),
+            Some("Leave the stack".into())
+        );
+        assert_eq!(
+            help_for(&state, Chord::key('p')),
             Some("Keep this photo, trash the rest of the stack".into())
         );
     }

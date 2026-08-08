@@ -177,13 +177,16 @@ fn named_label(named: Named) -> &'static str {
     match named {
         Named::Enter => "\u{21b5}",
         Named::Escape => "Esc",
-        Named::Space => "Space",
+        // Lower case, like the letter keys beside them: a capital in this
+        // column means shift is part of the chord. `Esc` keeps its capital as
+        // an abbreviation rather than a word.
+        Named::Space => "space",
         Named::ArrowLeft => "\u{2190}",
         Named::ArrowRight => "\u{2192}",
         Named::ArrowUp => "\u{2191}",
         Named::ArrowDown => "\u{2193}",
         Named::Backspace => "\u{232b}",
-        Named::Tab => "Tab",
+        Named::Tab => "tab",
         // Nothing else is bound; a label is still better than a panic.
         _ => "?",
     }

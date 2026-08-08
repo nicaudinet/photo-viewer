@@ -507,6 +507,8 @@ mod tests {
             help_for(&state, "x"),
             Some("Paint a range to deselect".into())
         );
+        // Anchors the label the negative assertion below is written against.
+        assert!(help_for(&state, "space").is_some());
 
         enter_visual(&mut state, RangeOp::Add);
         assert_eq!(
@@ -518,7 +520,7 @@ mod tests {
             Some("Cancel the painted range".into())
         );
         // A set edit mid-paint would end the range behind the user's back.
-        assert_eq!(help_for(&state, "Space"), None);
+        assert_eq!(help_for(&state, "space"), None);
     }
 
     #[test]

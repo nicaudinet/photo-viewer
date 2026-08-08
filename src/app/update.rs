@@ -8,7 +8,7 @@ use iced::window::Mode;
 use iced::Task;
 
 use crate::core::library::IMAGE_EXTENSIONS;
-use crate::screens::wall::{Click, WallMsg};
+use crate::screens::wall::Click;
 
 use super::{App, Message, Screen};
 
@@ -39,21 +39,15 @@ impl App {
                 self.help_open = !self.help_open;
                 Task::none()
             }
-            // Esc is a ladder: a pending confirmation first, then the help
-            // overlay, then the wall's own rungs (cancel a running batch, then
-            // a painted range, then the selection). One press is one rung.
+            // Esc is a ladder, and these are the two rungs the app owns: a
+            // pending question, then the help overlay. The rungs below belong
+            // to the live screen and are taken there — the key never reaches
+            // this arm while one of them is live, because the app's keymap only
+            // claims Esc while the help is up. One press is one rung.
             Message::Escape => {
-                if self.confirm.take().is_some() {
-                    return Task::none();
-                }
-                if self.help_open {
-                    self.help_open = false;
-                    return Task::none();
-                }
-                match &mut self.screen {
-                    Screen::Wall(w) => w.update(WallMsg::Escape),
-                    _ => Task::none(),
-                }
+                self.confirm = None;
+                self.help_open = false;
+                Task::none()
             }
             Message::ToggleFullscreen => {
                 self.fullscreen = !self.fullscreen;

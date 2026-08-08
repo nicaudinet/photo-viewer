@@ -67,11 +67,7 @@ pub(crate) fn help_overlay(app: &App) -> Element<'static, Message> {
             body.push(section(title, rows))
         });
 
-    let panel = column![
-        text("What you can do here").size(22),
-        container(scrollable(sections)).max_height(MAX_HEIGHT),
-    ]
-    .spacing(16);
+    let panel = container(scrollable(sections)).max_height(MAX_HEIGHT);
 
     center(container(panel).padding(28).style(overlay_box)).into()
 }

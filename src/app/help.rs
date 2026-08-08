@@ -9,8 +9,11 @@
 //! The live screen goes above the global keys, as lazygit puts the focused
 //! panel's bindings above the ones that work anywhere.
 
+use iced::alignment::Horizontal;
+use iced::font::Weight;
+use iced::theme::palette::lighten;
 use iced::widget::{center, column, container, row, scrollable, text, Column};
-use iced::{Element, Length};
+use iced::{Element, Font, Length, Theme};
 
 use crate::keymap::Row;
 
@@ -22,8 +25,14 @@ use super::{App, Message, Screen};
 const MAX_HEIGHT: f32 = 460.0;
 
 /// Width of the key column. Wide enough for `⌘A` and `Space`, narrow enough
-/// that the sentences beside them stay in one block.
+/// that the sentences beside them stay in one block. The keys are set flush
+/// right inside it, so however long the spelling, it ends up against the
+/// sentence it belongs to rather than adrift from it.
 const KEY_WIDTH: f32 = 96.0;
+
+/// How far the key colour is lifted off the palette's primary — the same lift
+/// the wall gives the cursor ring, so the accent means one thing in the app.
+const KEY_LIGHTEN: f32 = 0.25;
 
 impl App {
     /// The overlay's sections: the live screen's keys, then the global ones.
@@ -78,13 +87,33 @@ fn section(title: &'static str, rows: Vec<Row>) -> Column<'static, Message> {
         |section, Row { keys, desc }| {
             section.push(
                 row![
-                    text(keys).size(16).width(Length::Fixed(KEY_WIDTH)),
+                    text(keys)
+                        .size(16)
+                        .font(BOLD)
+                        .style(key_colour)
+                        .width(Length::Fixed(KEY_WIDTH))
+                        .align_x(Horizontal::Right),
                     text(desc).size(16),
                 ]
                 .spacing(16),
             )
         },
     )
+}
+
+/// Bold, so a key is told from the sentence about it by weight as well as by
+/// colour — the overlay is read by scanning the left edge for a key.
+const BOLD: Font = Font {
+    weight: Weight::Bold,
+    ..Font::DEFAULT
+};
+
+/// The accent the wall paints the cursor in, applied to the keys themselves.
+fn key_colour(theme: &Theme) -> text::Style {
+    let palette = theme.extended_palette();
+    text::Style {
+        color: Some(lighten(palette.primary.base.color, KEY_LIGHTEN)),
+    }
 }
 
 #[cfg(test)]

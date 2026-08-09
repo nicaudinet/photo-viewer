@@ -108,10 +108,49 @@ mod tests {
         assert_eq!(sections[0].0, "Everywhere");
 
         let keys: Vec<&str> = sections[0].1.iter().map(|row| row.keys.as_str()).collect();
-        // With nothing loaded there is no wall to toggle to, so `w` is not
-        // offered — but opening something is the whole point of this screen.
+        // `w` belongs to the photograph it leaves, so it is not among the
+        // globals here — but opening something is the whole point of this
+        // screen.
         assert!(keys.contains(&"o"), "{keys:?}");
         assert!(!keys.contains(&"w"), "{keys:?}");
+    }
+
+    #[test]
+    fn a_key_that_leaves_a_screen_is_listed_under_that_screen() {
+        use std::path::PathBuf;
+
+        use crate::core::library::Library;
+        use crate::core::pointed_list::PointedList;
+        use crate::core::tags::Tags;
+        use crate::screens::single::SingleState;
+
+        let files = vec![PathBuf::from("0.jpg")];
+        let mut app = empty_app();
+        app.screen = Screen::Single(SingleState::new(Library {
+            all: files.clone(),
+            paths: PointedList::new(files).unwrap(),
+            image_dir: PathBuf::from("/photos"),
+            selection: Default::default(),
+            tags: Tags::new(),
+            filter: None,
+            grouping: None,
+        }));
+
+        let sections = app.help_sections();
+        let holding = |title: &str| {
+            sections
+                .iter()
+                .find(|(name, _)| *name == title)
+                .map(|(_, rows)| rows.iter().any(|row| row.keys == "w"))
+                .unwrap_or(false)
+        };
+        // `w` works here and nowhere else, so it reads as one of this screen's
+        // keys rather than as one of the app's.
+        assert!(holding("Photo"), "the photo section lost its way back");
+        assert!(
+            !holding("Everywhere"),
+            "a one-screen key claimed to be global"
+        );
     }
 
     #[test]

@@ -13,9 +13,22 @@ use crate::keymap::{lookup, rows, Binding, Chord, Row};
 use super::message::SingleMsg;
 use super::SingleState;
 
+/// What a key press on this screen asks for.
+///
+/// Nearly all of it the screen answers itself. `w` does not: leaving for the
+/// wall replaces the screen, which only the app can do. Naming it here rather
+/// than in the app's own table is what puts it under "Photo" in the help — it
+/// is a key of this screen, not one that works everywhere.
+pub(crate) enum SingleKey {
+    /// This screen's own business.
+    Msg(SingleMsg),
+    /// Leave the photograph and show the wall it came from.
+    ShowWall,
+}
+
 impl SingleState {
     /// What `event` means here, or `None` if it means nothing.
-    pub(crate) fn key(&self, event: &keyboard::Event) -> Option<SingleMsg> {
+    pub(crate) fn key(&self, event: &keyboard::Event) -> Option<SingleKey> {
         lookup(SINGLE, self, event)
     }
 
@@ -35,33 +48,40 @@ const ROTATE: &str = "Rotate left / right";
 /// The single view's keyboard. Nothing here is guarded: a photograph on screen
 /// can always be moved away from, rotated and favourited, and this screen has
 /// no mode in which that stops being true.
-const SINGLE: &[Binding<SingleState, SingleMsg>] = &[
+const SINGLE: &[Binding<SingleState, SingleKey>] = &[
     // Two rows in the help, as on the wall: the arrows, then their vim twins,
     // in the order `MOVE` names them.
     Binding::always(
         &[Chord::named(Named::ArrowLeft), Chord::key('h')],
         MOVE,
-        |_| SingleMsg::Prev,
+        |_| SingleKey::Msg(SingleMsg::Prev),
     )
     .merged(),
     Binding::always(
         &[Chord::named(Named::ArrowRight), Chord::key('l')],
         MOVE,
-        |_| SingleMsg::Next,
+        |_| SingleKey::Msg(SingleMsg::Next),
     )
     .merged(),
     Binding::always(&[Chord::key('f')], "Favourite this photo", |_| {
-        SingleMsg::ToggleFavourite
+        SingleKey::Msg(SingleMsg::ToggleFavourite)
     }),
     // One row, as on the wall: two keys for the two ways round.
     Binding::always(&[Chord::key('r')], ROTATE, |_| {
-        SingleMsg::RotateAnticlockwise
+        SingleKey::Msg(SingleMsg::RotateAnticlockwise)
     })
     .merged(),
     Binding::always(
         &[Chord::shift('R'), Chord::key('R').alias()],
         ROTATE,
-        |_| SingleMsg::RotateClockwise,
+        |_| SingleKey::Msg(SingleMsg::RotateClockwise),
     )
     .merged(),
+    // Last, because it is the way out rather than something done to the photo —
+    // and one way only. The wall has no `w` back: there a photograph is opened
+    // by pointing at it, so the key would have to mean "whichever one is under
+    // the cursor", which is not what it says here.
+    Binding::always(&[Chord::key('w')], "Show the wall of photos", |_| {
+        SingleKey::ShowWall
+    }),
 ];

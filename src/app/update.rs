@@ -84,7 +84,6 @@ impl App {
                 _ => Task::none(),
             },
 
-            Message::ShowWall => self.show_wall(),
             Message::OpenFile => {
                 // Start where the photos on screen live. Left to itself the
                 // panel reopens wherever it was last, which may be a network

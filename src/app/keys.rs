@@ -6,9 +6,12 @@
 //! overlay genuinely modal.
 //!
 //! Outside a question the app claims only the keys that mean the same thing
-//! wherever you are — quit, fullscreen, help, and moving between screens. Every
-//! other key is offered to whichever screen is live, which is why the app's
-//! vocabulary has no word for "paint a range" or "stack similar photos".
+//! wherever you are — quit, fullscreen, open, help. Every other key is offered
+//! to whichever screen is live, which is why the app's vocabulary has no word
+//! for "paint a range" or "stack similar photos". A key that leaves one screen
+//! for another belongs to the screen it leaves, not here: the help reads as a
+//! list of what can be done *here*, and a row under "Everywhere" that is live
+//! on one screen out of three does not.
 //!
 //! Both keymaps are tables ([`crate::keymap`]), so every key carries the
 //! sentence the help shows and a guard saying when it is live.
@@ -19,14 +22,14 @@ use iced::keyboard::{self, key::Named};
 use iced::{Subscription, Task};
 
 use crate::keymap::{lookup, rows, Binding, Chord, Row};
-use crate::screens::single::SingleMsg;
+use crate::screens::single::SingleKey;
 use crate::screens::wall::WallKey;
 
 use super::{App, Message, Screen};
 
 /// A key press, once the live screen has had a look at it.
 enum Keyed {
-    Single(SingleMsg),
+    Single(SingleKey),
     Wall(WallKey),
 }
 
@@ -109,7 +112,8 @@ impl App {
         };
 
         Some(match keyed? {
-            Keyed::Single(msg) => self.update(Message::Single(msg)),
+            Keyed::Single(SingleKey::Msg(msg)) => self.update(Message::Single(msg)),
+            Keyed::Single(SingleKey::ShowWall) => self.show_wall(),
             Keyed::Wall(WallKey::Msg(msg)) => self.update(Message::Wall(msg)),
             Keyed::Wall(WallKey::Open(index)) => self.open_index(index),
             Keyed::Wall(WallKey::Trash) => {
@@ -146,6 +150,9 @@ fn is_escape(event: &keyboard::Event) -> bool {
 /// with it — the press itself is not stopped here. Every rung below belongs to
 /// whichever screen has something to drop — a painted range, a selection, the
 /// stack the user is standing in.
+///
+/// Nothing here is guarded on which screen is live. A key that only works on
+/// one of them is that screen's, and lives in its table.
 const APP: &[Binding<App, Message>] = &[
     // `?` reaches here as the modified key: on a US layout the key pressed is
     // `/`, and the `?` exists only once shift is applied.
@@ -160,15 +167,6 @@ const APP: &[Binding<App, Message>] = &[
         "Close this help",
         |app| app.help_open,
         |_| Message::ToggleHelp,
-    ),
-    // One way only. On the wall a photograph is opened by pointing at it —
-    // Enter, or a click — so `w` there would have to mean "whichever one is
-    // under the cursor", which is not what the key says anywhere else.
-    Binding::when(
-        &[Chord::key('w')],
-        "Show the wall of photos",
-        |app| matches!(app.screen, Screen::Single(_)),
-        |_| Message::ShowWall,
     ),
     Binding::always(&[Chord::key('o')], "Open a file or folder", |_| {
         Message::OpenFile

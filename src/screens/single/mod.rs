@@ -26,6 +26,7 @@ use iced::Task;
 use crate::core::library::Library;
 use crate::Message;
 
+pub(crate) use keys::SingleKey;
 pub(crate) use message::SingleMsg;
 
 /// Single-view state: the library plus the current fit-to-window decode.

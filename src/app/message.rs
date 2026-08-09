@@ -52,11 +52,10 @@ pub(crate) enum Message {
     WallMeasure,
 
     // Transitions between screens — owned by `App` because a per-screen update
-    // can't reassign `self.screen`.
-    /// `w` from the single view: back out to the wall the photo came from.
-    /// There is no key the other way — the wall opens a photograph by naming
-    /// it, with Enter or a click.
-    ShowWall,
+    // can't reassign `self.screen`. The two keys that cross between the wall
+    // and a photograph — `w` one way, Enter or a click the other — are their
+    // screens' own, and reach `App::show_wall` and `App::open_index` straight
+    // from `App::key` rather than through a message.
     /// `o`: pick a single image file to open (single view).
     OpenFile,
     OpenFilePicked(Option<PathBuf>),

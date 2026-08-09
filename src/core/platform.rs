@@ -7,15 +7,24 @@
 //! app drains it via `take_open_files` on a timer subscription. Mirrors the
 //! Python `PhotoViewerApplication.event` + `_pending_path` buffering.
 //!
-//! Timing gotcha: `-[NSApplication finishLaunching]` installs AppKit's own
-//! `odoc` handler, which overwrites any we set beforehand — so registering in
-//! `main()` (before winit runs the app) silently loses the event, and the open
-//! Apple Event times out ("The document could not be opened"). We therefore
-//! defer the `NSAppleEventManager` registration to
-//! `NSApplicationDidFinishLaunchingNotification`, which fires *after* AppKit's
-//! own install, so ours wins. The pending launch-time `odoc` is only dispatched
-//! on the next run-loop pass, after that notification, so this also catches the
-//! double-click-to-launch case.
+//! Timing gotcha, and there is exactly one window that works.
+//! `-[NSApplication finishLaunching]` installs AppKit's own `odoc` handler,
+//! which overwrites any we set beforehand — so registering in `main()` (before
+//! winit runs the app) is silently lost. But `finishLaunching` then *dispatches
+//! the launch-time `odoc`* before posting
+//! `NSApplicationDidFinishLaunchingNotification`, so registering there is too
+//! late: AppKit has already handled the open. Apple's own advice is to install
+//! in `applicationWillFinishLaunching:`, which is posted after AppKit's
+//! handlers go in and before the launch event is dispatched — the one gap
+//! where ours can win. We observe
+//! `NSApplicationWillFinishLaunchingNotification` for that reason.
+//!
+//! What losing the race looks like: AppKit's default handler finds no
+//! `application:openFiles:` on the delegate (winit owns it, implements none of
+//! them, and panics if replaced), falls back to `NSDocumentController`, and —
+//! since nothing declares an `NSDocumentClass` for our `CFBundleDocumentTypes`
+//! entry — puts up "PhotoViewer cannot open documents in the «Image» format",
+//! naming the `CFBundleTypeName` from `flake.nix`.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -144,9 +153,10 @@ mod macos {
             }
 
             // Fires after AppKit has installed its own odoc handler in
-            // finishLaunching; now safe to register ours on top.
-            #[unsafe(method(applicationDidFinishLaunching:))]
-            fn application_did_finish_launching(&self, _note: &NSObject) {
+            // finishLaunching, and before finishLaunching dispatches the
+            // launch-time odoc — the only point where ours can take over.
+            #[unsafe(method(applicationWillFinishLaunching:))]
+            fn application_will_finish_launching(&self, _note: &NSObject) {
                 self.register_apple_event_handler();
             }
         }
@@ -159,8 +169,9 @@ mod macos {
         }
 
         /// Register self as the shared manager's `kAEOpenDocuments` handler.
-        /// Must run *after* `NSApplication` finishLaunching, else AppKit's own
-        /// registration overwrites ours.
+        /// Must run from `applicationWillFinishLaunching:` — earlier and
+        /// AppKit's own registration overwrites ours, later and AppKit has
+        /// already handled the launch open (see module docs).
         fn register_apple_event_handler(&self) {
             let manager = NSAppleEventManager::sharedAppleEventManager();
             unsafe {
@@ -219,18 +230,18 @@ mod macos {
     pub(super) fn install() {
         let handler = Handler::new();
 
-        // Register the Apple Event handler only once AppKit has finished
-        // launching (see module docs): observe the notification and install
-        // from there. addObserver keeps only a weak reference to the observer,
-        // and setEventHandler likewise, so leak the handler to keep it alive
-        // for the whole process.
+        // Register the Apple Event handler in the one window where it sticks
+        // (see module docs): observe will-finish-launching and install from
+        // there. addObserver keeps only a weak reference to the observer, and
+        // setEventHandler likewise, so leak the handler to keep it alive for
+        // the whole process.
         unsafe {
             let center = NSNotificationCenter::defaultCenter();
             center.addObserver_selector_name_object(
                 &handler,
-                sel!(applicationDidFinishLaunching:),
+                sel!(applicationWillFinishLaunching:),
                 Some(&NSString::from_str(
-                    "NSApplicationDidFinishLaunchingNotification",
+                    "NSApplicationWillFinishLaunchingNotification",
                 )),
                 None,
             );

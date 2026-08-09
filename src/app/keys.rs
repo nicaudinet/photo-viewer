@@ -149,16 +149,16 @@ fn is_escape(event: &keyboard::Event) -> bool {
 const APP: &[Binding<App, Message>] = &[
     // `?` reaches here as the modified key: on a US layout the key pressed is
     // `/`, and the `?` exists only once shift is applied.
+    //
+    // One line, both ways: `?` reads as the key the list lives on, and a row
+    // that only ever says "close" while the list is up says less than that.
+    Binding::always(&[Chord::sym('?')], "Toggle the help menu", |_| {
+        Message::ToggleHelp
+    }),
     Binding::when(
-        &[Chord::sym('?'), Chord::named(Named::Escape)],
+        &[Chord::named(Named::Escape)],
         "Close this help",
         |app| app.help_open,
-        |_| Message::ToggleHelp,
-    ),
-    Binding::when(
-        &[Chord::sym('?')],
-        "Show what these keys do",
-        |app| !app.help_open,
         |_| Message::ToggleHelp,
     ),
     Binding::when(

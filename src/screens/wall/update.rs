@@ -152,8 +152,9 @@ impl WallState {
     ///
     /// Refused while anything is selected. A filter that hid a selected photo
     /// would put images the user cannot see into the next batch; forbidding the
-    /// combination removes that whole class of bug rather than papering over it
-    /// (see `SELECT_MODE_PLAN.md`). Clearing the selection with Esc is one key.
+    /// combination removes that whole class of bug rather than papering over
+    /// it (see `plans/SELECT_MODE_PLAN.md`). Clearing the selection with Esc is
+    /// one key.
     pub(super) fn toggle_filter(&mut self) -> Task<Message> {
         if self.is_visual() || self.batch.is_some() || !self.library.selection.is_empty() {
             return Task::none();

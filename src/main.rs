@@ -17,7 +17,7 @@
 //!
 //! Favourites are a tag over a selection (`core/tags.rs`); mark-to-delete is
 //! gone for good, since `d` trashes a selection outright. See
-//! `SELECT_MODE_PLAN.md`.
+//! `plans/SELECT_MODE_PLAN.md`.
 //!
 //! Three layers, and the rule for each:
 //!
@@ -30,7 +30,7 @@
 //!
 //! Beside them, [`keymap`]: the machinery a keyboard is written in. Every
 //! keymap is a table of bindings, and both dispatch and the help overlay are
-//! walks over it — see `HELP_PLAN.md`.
+//! walks over it — see `plans/HELP_PLAN.md`.
 //!
 //! This file is the entry point and nothing else.
 

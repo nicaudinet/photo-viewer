@@ -5,8 +5,8 @@
 //! the wall knows whether the image is still in the library.
 //!
 //! Clashes are resolved by a policy chosen once, before any file is written
-//! (see `SELECT_MODE_PLAN.md` phase 5), rather than by a prompt per file: a
-//! batch runs several files at a time, so a mid-batch question would have to
+//! (see `plans/SELECT_MODE_PLAN.md` phase 5), rather than by a prompt per file:
+//! a batch runs several files at a time, so a mid-batch question would have to
 //! stall dispatch while work already handed to the runtime carried on — and a
 //! hundred clashes would mean a hundred questions.
 

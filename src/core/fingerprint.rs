@@ -1,10 +1,10 @@
 //! What makes two photos "the same shot", and the runs that follow from it.
 //!
-//! This is the whole of the grouping policy (`GROUP_MODE_PLAN.md`), as pure
-//! functions over a tiny per-photo summary. Nothing here reads the library,
-//! touches the wall, or decides how a stack is drawn — it answers one question,
-//! "do these two belong together?", and one that follows from it, "so where are
-//! the runs?".
+//! This is the whole of the grouping policy (`plans/GROUP_MODE_PLAN.md`), as
+//! pure functions over a tiny per-photo summary. Nothing here reads the
+//! library, touches the wall, or decides how a stack is drawn — it answers one
+//! question, "do these two belong together?", and one that follows from it, "so
+//! where are the runs?".
 //!
 //! ## Why two signals
 //!

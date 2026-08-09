@@ -5,7 +5,7 @@
 //! It is now one tag among however many (see [`crate::core::tags`]) applied to a
 //! selection, and the filter that shows only tagged images narrows `paths`
 //! rather than narrowing where thumbnails are drawn — see
-//! `SELECT_MODE_PLAN.md` phase 6 for why that difference matters.
+//! `plans/SELECT_MODE_PLAN.md` phase 6 for why that difference matters.
 
 use std::collections::HashSet;
 use std::fmt;

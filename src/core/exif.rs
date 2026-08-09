@@ -399,8 +399,9 @@ fn insert_exif_segment(data: &mut Vec<u8>, value: u8) -> Result<(), String> {
 /// and it must only ever be used to take differences between photos from the
 /// same camera on the same day — which is the only thing grouping asks of it.
 /// A pair spanning a daylight-saving change or a flight is off by the offset.
-// Nothing calls this until fingerprints land (`GROUP_MODE_PLAN.md` phase 1);
-// the whole read path hangs off it, so this one attribute keeps the rest live.
+// Nothing calls this until fingerprints land (`plans/GROUP_MODE_PLAN.md`
+// phase 1); the whole read path hangs off it, so this one attribute keeps the
+// rest live.
 #[allow(dead_code)]
 pub(crate) fn taken_at(path: &Path) -> Option<i64> {
     let data = read_header(path).ok()?;

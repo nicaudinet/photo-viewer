@@ -285,7 +285,7 @@ const WALL: &[WallBinding] = &[
         |_| WallKey::Trash,
     ),
     // Stacking. Inside a stack `g` backs out and ungroups, which is the only
-    // reading that survives a re-chain — see `GROUP_MODE_PLAN.md`.
+    // reading that survives a re-chain — see `plans/GROUP_MODE_PLAN.md`.
     Binding::when(
         &[Chord::key('g')],
         "Stop stacking",

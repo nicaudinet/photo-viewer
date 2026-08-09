@@ -1,8 +1,8 @@
 //! The single view: one fit-to-window image, with navigation and rotate.
 //!
 //! Every action here applies to the current image and nothing else — see
-//! `SELECT_MODE_PLAN.md`. That includes `f`: whatever the wall has selected,
-//! favouriting from this screen touches the photo on it and no other.
+//! `plans/SELECT_MODE_PLAN.md`. That includes `f`: whatever the wall has
+//! selected, favouriting from this screen touches the photo on it and no other.
 //!
 //! | module | what it owns |
 //! |---|---|

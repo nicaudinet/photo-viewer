@@ -1,7 +1,7 @@
 //! Named tags over the images in one directory, and their on-disk store.
 //!
 //! Favourites used to be a hard-coded set with its own cache file (removed in
-//! phase 0 of `SELECT_MODE_PLAN.md`). It comes back here as one tag among
+//! phase 0 of `plans/SELECT_MODE_PLAN.md`). It comes back here as one tag among
 //! however many, because "favourite" is a judgement the user makes and there is
 //! no reason the app should be the one deciding it is the only judgement worth
 //! recording. Only [`FAVOURITE`] is reachable from the keyboard so far; the

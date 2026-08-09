@@ -4,7 +4,8 @@
 //!
 //! Selection is vim-shaped: [`WallMode::Normal`] moves a cursor,
 //! [`WallMode::Visual`] paints a range as the cursor moves, and
-//! [`WallMode::Select`] holds the committed set. See `SELECT_MODE_PLAN.md`.
+//! [`WallMode::Select`] holds the committed set. See
+//! `plans/SELECT_MODE_PLAN.md`.
 //!
 //! This module owns [`WallState`] and the handful of things `App` calls on it.
 //! Everything else is one concern per file:

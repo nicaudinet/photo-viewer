@@ -2,8 +2,8 @@
 //!
 //! Hashing a folder is the only expensive part of grouping, so it happens once,
 //! here, and everything after it is a pass over numbers already in hand — see
-//! `GROUP_MODE_PLAN.md`. The pass is shaped like the decode scheduler and the
-//! batch queue before it: bounded work in flight, refilled as each result
+//! `plans/GROUP_MODE_PLAN.md`. The pass is shaped like the decode scheduler and
+//! the batch queue before it: bounded work in flight, refilled as each result
 //! lands, with how far along it is in the mode bar and Esc to stop it.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -141,7 +141,7 @@ impl WallState {
         // Exploding *only* this stack was the other reading. It would have to
         // survive a re-chain, and a re-chain happens after every trash, filter
         // and turn of the dial; keeping a manual split alive across those is
-        // the machinery `GROUP_MODE_PLAN.md` set out not to build.
+        // the machinery `plans/GROUP_MODE_PLAN.md` set out not to build.
         if self.parent.is_some() {
             let popped = self.pop();
             return Task::batch([popped, self.toggle_grouping()]);

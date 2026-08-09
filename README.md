@@ -8,7 +8,7 @@ Rewritten from an earlier PySide6/Qt implementation.
 Selection is modal and vim-shaped: a cursor moves over a wall of thumbnails,
 `v` paints a range, and whatever is selected can be rotated, favourited, sent
 to another folder or trashed in one go. See
-[`SELECT_MODE_PLAN.md`](SELECT_MODE_PLAN.md) for the design and its reasoning.
+[`plans/SELECT_MODE_PLAN.md`](plans/SELECT_MODE_PLAN.md) for the design and its reasoning.
 
 ## Keybindings
 
@@ -16,7 +16,7 @@ to another folder or trashed in one go. See
 
 | Key | Action |
 |-----|--------|
-| `?` | What you can do here — the keys the live screen accepts in the mode it is in, and no others ([`HELP_PLAN.md`](HELP_PLAN.md)). Any key in the list acts and closes it |
+| `?` | What you can do here — the keys the live screen accepts in the mode it is in, and no others ([`plans/HELP_PLAN.md`](plans/HELP_PLAN.md)). Any key in the list acts and closes it |
 | `Esc` | A ladder, one rung per press: the help, then a running operation, a painted range, the selection, and finally the stack you are in |
 | `q` | Quit, after confirming (`y` to leave, `n` to stay) |
 | `e` | Toggle fullscreen |

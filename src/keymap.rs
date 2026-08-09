@@ -8,7 +8,7 @@
 //!
 //! The guard is what makes the help context-aware: `p` — keep this photograph,
 //! trash the rest of its stack — means nothing outside a stack, so it is
-//! neither offered to the user nor dispatched there. See `HELP_PLAN.md`.
+//! neither offered to the user nor dispatched there. See `plans/HELP_PLAN.md`.
 
 use iced::keyboard::{self, key::Named};
 

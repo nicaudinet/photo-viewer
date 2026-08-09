@@ -14,7 +14,7 @@ use iced::Element;
 
 use crate::keymap::Row;
 
-use super::view::{key_row, overlay_box};
+use super::view::{help_row, overlay_box};
 use super::{App, Message, Screen};
 
 /// How much of the window the overlay leaves above and below itself. The list
@@ -77,7 +77,7 @@ pub(crate) fn help_overlay(app: &App) -> Element<'static, Message> {
 fn section(title: &'static str, rows: Vec<Row>) -> Column<'static, Message> {
     rows.into_iter().fold(
         column![text(title).size(13).style(text::secondary)].spacing(3),
-        |section, row| section.push(key_row(row)),
+        |section, row| section.push(help_row(row)),
     )
 }
 

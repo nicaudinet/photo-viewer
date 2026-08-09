@@ -56,12 +56,16 @@ pub(super) fn overlay_box(theme: &Theme) -> container::Style {
     }
 }
 
-/// Width of the key column in both overlays. Wide enough for `space` and for a
-/// movement row's four keys, narrow enough that the sentences beside them stay
-/// in one block. The keys are set flush right inside it, so however long the
-/// spelling, it ends up against the sentence it belongs to rather than adrift
-/// from it.
+/// Width of the help's key column. Wide enough for `space` and for a movement
+/// row's four keys, narrow enough that the sentences beside them stay in one
+/// block. The keys are set flush right inside it, so however long the spelling,
+/// it ends up against the sentence it belongs to rather than adrift from it.
 const KEY_WIDTH: f32 = 84.0;
+
+/// Width of a question's key column. Every answer is a single letter, so the
+/// column only has to hold one — and a wide one would push the answers off
+/// centre under the question, since the empty half of it is still laid out.
+const ANSWER_KEY_WIDTH: f32 = 14.0;
 
 /// How far the key colour is lifted off the palette's primary — the same lift
 /// the wall gives the cursor ring, so the accent means one thing in the app.
@@ -78,17 +82,25 @@ const BOLD: Font = Font {
 /// what can be answered — the same shape, so a key looks the same wherever the
 /// user meets it, and the answers to a question read as keys rather than as a
 /// sentence about keys.
-pub(super) fn key_row(Row { keys, desc }: Row) -> WRow<'static, Message> {
+///
+/// `key_width` is how much room the key column takes: the two overlays hold
+/// different keys, and the column is only as wide as its own list needs.
+fn key_row(Row { keys, desc }: Row, key_width: f32) -> WRow<'static, Message> {
     row![
         text(keys)
             .size(15)
             .font(BOLD)
             .style(key_colour)
-            .width(Length::Fixed(KEY_WIDTH))
+            .width(Length::Fixed(key_width))
             .align_x(Horizontal::Right),
         text(desc).size(15),
     ]
     .spacing(12)
+}
+
+/// One line of the help: a key, and the sentence about it.
+pub(super) fn help_row(row: Row) -> WRow<'static, Message> {
+    key_row(row, KEY_WIDTH)
 }
 
 /// The accent the wall paints the cursor in, applied to the keys themselves.
@@ -115,11 +127,12 @@ pub(crate) fn confirm_overlay(
         asked = asked.push(text(detail.to_string()).size(14).style(text::secondary));
     }
 
-    // Left-aligned against each other, and centred under the question as one
-    // block: the key column only reads as a column if every key is in it.
-    let answers = answers
-        .into_iter()
-        .fold(column![].spacing(4), |list, row| list.push(key_row(row)));
+    // Ranged against each other, and centred under the question as one block:
+    // the key column only reads as a column if every key is in it, so the rows
+    // are not centred one by one.
+    let answers = answers.into_iter().fold(column![].spacing(4), |list, row| {
+        list.push(key_row(row, ANSWER_KEY_WIDTH))
+    });
 
     center(
         container(

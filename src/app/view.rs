@@ -33,11 +33,13 @@ impl App {
             ));
         }
 
-        if layers.len() == 1 {
-            layers.pop().unwrap()
-        } else {
-            Stack::with_children(layers).into()
-        }
+        // Always a stack, even with nothing over the screen. iced keeps widget
+        // state by position in the tree and throws it away when the widget
+        // there changes kind, so a root that turned into a `Stack` the moment
+        // an overlay appeared would take the wall's scroll position with it —
+        // the wall would jump to the top behind the help. Layers are added and
+        // removed above it; the screen itself stays the first child throughout.
+        Stack::with_children(layers).into()
     }
 }
 

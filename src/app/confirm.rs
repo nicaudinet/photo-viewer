@@ -10,6 +10,8 @@
 
 use iced::Task;
 
+use crate::keymap::Row;
+
 use super::{App, Message};
 
 /// A question waiting on the user, and what each answer sends.
@@ -18,9 +20,12 @@ pub(super) struct Confirm {
     /// Anything the user has to know before answering, and would not otherwise
     /// see. Whoever asks the question decides what that is.
     pub(super) detail: Option<String>,
-    /// The answers on offer, in order. Enter picks the first, so that one must
-    /// always be the safe reading of the question. `n` and Esc always cancel,
-    /// so no answer may claim either key; nor `q`, which asks about quitting.
+    /// The answers on offer, in order. `n` always says no, so no answer may
+    /// claim that key; nor `q`, which asks about quitting.
+    ///
+    /// Every answer is a letter the user types. There is no default one: a
+    /// question about files that cannot be got back should take a deliberate
+    /// key, not whatever the hands were already resting on.
     pub(super) choices: Vec<Choice>,
 }
 
@@ -34,41 +39,36 @@ pub(super) struct Choice {
 }
 
 impl Confirm {
-    /// The keys line under the question. Every way out is named: an answer the
-    /// overlay does not mention is an answer nobody can give.
-    pub(super) fn hint(&self) -> String {
-        let mut parts: Vec<String> = self
+    /// The answers, as the same key rows the help overlay is made of. Every way
+    /// out is named: an answer the overlay does not mention is an answer nobody
+    /// can give.
+    pub(super) fn answers(&self) -> Vec<Row> {
+        let mut rows: Vec<Row> = self
             .choices
             .iter()
-            .enumerate()
-            .map(|(i, c)| match i {
-                0 => format!("{} / enter \u{2014} {}", c.key, c.label),
-                _ => format!("{} \u{2014} {}", c.key, c.label),
+            .map(|c| Row {
+                keys: c.key.to_string(),
+                desc: c.label,
             })
             .collect();
-        parts.push("n / Esc \u{2014} cancel".to_string());
-        parts.join("      ")
+        rows.push(Row {
+            keys: "n".to_string(),
+            // A question with nothing on offer is a statement, and "no" is no
+            // answer to one.
+            desc: if self.choices.is_empty() { "ok" } else { "no" },
+        });
+        rows
     }
 }
 
 impl App {
-    /// Carry out the answer keyed `key`, or the first one on offer if `key` is
-    /// `None` (what Enter means). An unrecognised key leaves the question up.
-    pub(super) fn answer(&mut self, key: Option<char>) -> Task<Message> {
+    /// Carry out the answer keyed `key`. An unrecognised key leaves the
+    /// question up: only the keys the overlay names do anything.
+    pub(super) fn answer(&mut self, key: char) -> Task<Message> {
         let Some(confirm) = &self.confirm else {
             return Task::none();
         };
-        let found = match key {
-            Some(key) => confirm.choices.iter().position(|c| c.key == key),
-            // Enter takes the first answer, which is always the safe one.
-            None => (!confirm.choices.is_empty()).then_some(0),
-        };
-        let Some(index) = found else {
-            // A question with no answers on offer is a statement; Enter
-            // dismisses it, an unrecognised key leaves it up.
-            if key.is_none() {
-                self.confirm = None;
-            }
+        let Some(index) = confirm.choices.iter().position(|c| c.key == key) else {
             return Task::none();
         };
         // Taken before the message is sent, so `update` sees no question up and
@@ -121,19 +121,11 @@ mod tests {
     }
 
     #[test]
-    fn enter_sends_what_the_first_answer_carries() {
-        let mut app = asked(&['t', 'k', 'o']);
-        let _ = app.answer(None);
-        assert!(app.confirm.is_none());
-        assert!(app.help_open, "the first answer's message was not sent");
-    }
-
-    #[test]
     fn a_named_key_sends_what_that_answer_carries() {
         // `t` is last, so picking it proves the key was matched rather than the
         // first choice taken.
         let mut app = asked(&['s', 'k', 't']);
-        let _ = app.answer(Some('t'));
+        let _ = app.answer('t');
         assert!(app.confirm.is_none());
         assert!(app.help_open, "the keyed answer's message was not sent");
     }
@@ -141,32 +133,33 @@ mod tests {
     #[test]
     fn a_declined_answer_sends_nothing() {
         let mut app = asked(&['s', 't']);
-        let _ = app.answer(Some('s'));
+        let _ = app.answer('s');
         assert!(!app.help_open, "the wrong answer's message was sent");
     }
 
     #[test]
     fn an_unrecognised_key_leaves_the_question_up() {
         let mut app = asked(&['s', 'k']);
-        let _ = app.answer(Some('z'));
+        let _ = app.answer('z');
         assert!(app.confirm.is_some());
     }
 
     #[test]
-    fn a_statement_is_dismissed_by_enter_alone() {
-        let mut app = asked(&[]);
-        let _ = app.answer(Some('z'));
-        assert!(app.confirm.is_some(), "a stray key must not dismiss it");
-        let _ = app.answer(None);
-        assert!(app.confirm.is_none());
+    fn the_answers_name_every_way_out() {
+        let rows = question(&['s', 'k', 'o']).answers();
+        let keys: Vec<&str> = rows.iter().map(|row| row.keys.as_str()).collect();
+        assert_eq!(
+            keys,
+            ["s", "k", "o", "n"],
+            "the answers named the wrong keys"
+        );
     }
 
     #[test]
-    fn the_hint_names_every_way_out() {
-        let hint = question(&['s', 'k', 'o']).hint();
-        for key in ['s', 'k', 'o'] {
-            assert!(hint.contains(key), "hint did not name {key}: {hint}");
-        }
-        assert!(hint.contains("Esc"), "hint did not name the way to cancel");
+    fn a_statement_is_acknowledged_rather_than_refused() {
+        let rows = question(&[]).answers();
+        assert_eq!(rows.len(), 1, "a statement offers only the way out");
+        assert_eq!(rows[0].keys, "n");
+        assert_eq!(rows[0].desc, "ok");
     }
 }

@@ -23,8 +23,6 @@ impl App {
                 Message::AskQuit
                     | Message::ConfirmNo
                     | Message::ConfirmChoice(_)
-                    | Message::ConfirmDefault
-                    | Message::Escape
                     | Message::Quit
                     | Message::Removed { .. }
                     | Message::ModifiersChanged(_)
@@ -42,16 +40,6 @@ impl App {
             Message::Quit => iced::exit(),
             Message::ToggleHelp => {
                 self.help_open = !self.help_open;
-                Task::none()
-            }
-            // Esc is a ladder, and these are the two rungs the app owns: a
-            // pending question, then the help overlay. The rungs below belong
-            // to the live screen and are taken there — the key never reaches
-            // this arm while one of them is live, because the app's keymap only
-            // claims Esc while the help is up. One press is one rung.
-            Message::Escape => {
-                self.confirm = None;
-                self.help_open = false;
                 Task::none()
             }
             Message::ToggleFullscreen => {
@@ -84,8 +72,7 @@ impl App {
                 self.ask_about(plan);
                 Task::none()
             }
-            Message::ConfirmDefault => self.answer(None),
-            Message::ConfirmChoice(key) => self.answer(Some(key)),
+            Message::ConfirmChoice(key) => self.answer(key),
             Message::ConfirmNo => {
                 self.confirm = None;
                 Task::none()
@@ -156,11 +143,11 @@ impl App {
     /// ends the app asks first, like every other key that cannot be undone.
     fn ask_about_quit(&mut self) {
         self.confirm = Some(Confirm {
-            prompt: "Quit?".to_string(),
+            prompt: "Are you sure?".to_string(),
             detail: None,
             choices: vec![Choice {
                 key: 'y',
-                label: "quit",
+                label: "yes",
                 message: Message::Quit,
             }],
         });

@@ -21,8 +21,6 @@ pub(crate) enum Message {
     Quit,
     ToggleFullscreen,
     ToggleHelp,
-    /// Esc: close the help overlay.
-    Escape,
     /// The first frame has rendered; reveal the (initially hidden) window.
     WindowReady,
     /// A modifier key went down or up; remembered for the next click.
@@ -46,9 +44,7 @@ pub(crate) enum Message {
     },
     /// A key naming one of the answers on offer.
     ConfirmChoice(char),
-    /// Enter — take the first answer, which is always the safe one.
-    ConfirmDefault,
-    /// `n` — decline, whatever was asked.
+    /// `n` — decline, whatever was asked, or dismiss a statement.
     ConfirmNo,
     /// The window resized: re-measure the wall's viewport if it is on screen.
     /// The event's own size is the *window's*, not the scroll viewport's, so it

@@ -18,7 +18,7 @@ to another folder or trashed in one go. See
 |-----|--------|
 | `?` | What you can do here — the keys the live screen accepts in the mode it is in, and no others ([`HELP_PLAN.md`](HELP_PLAN.md)). Any key in the list acts and closes it |
 | `Esc` | A ladder, one rung per press: the help, then a running operation, a painted range, the selection, and finally the stack you are in |
-| `q` | Quit, after confirming (`y` / Enter to leave, `n` / `Esc` to stay) |
+| `q` | Quit, after confirming (`y` to leave, `n` to stay) |
 | `e` | Toggle fullscreen |
 | `o` | Open directory (native dir picker) |
 
@@ -122,9 +122,12 @@ While a range is being painted, none of these do anything — an uncommitted
 range has no settled meaning, so there is no honest answer to "which images?".
 
 While a question is on screen it is the only thing the keyboard talks to: its
-answers are named along the bottom of it, and those are the only keys that do
-anything (besides `Esc` to cancel and `q`, which replaces the question with the
-one about quitting — so the way out is never blocked).
+answers are listed under it as keys, one per line, and those are the only keys
+that do anything. Letters only — `n` says no, `y` (or `s`/`k`/`o`, where the
+answer is a policy) says which yes. Neither `Enter` nor `Esc` answers anything:
+those are the keys pressed without looking, and these questions are about files
+that cannot be got back. `q` still works, replacing the question with the one
+about quitting, so the way out is never blocked.
 
 The mouse is modal in the same way. With nothing selected a plain click still
 opens the image; `Cmd`-click is the way into a selection without touching the

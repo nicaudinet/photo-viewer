@@ -179,13 +179,14 @@ const APP: &[Binding<App, Message>] = &[
 ];
 
 /// The keyboard while a question is up: the keys it names, and nothing else.
+///
+/// Letters only. Enter and Esc are the two keys pressed without looking, and an
+/// answer about files that cannot be got back should be typed on purpose.
 fn answer_key(event: keyboard::Event) -> Option<Message> {
     let keyboard::Event::KeyPressed { key, .. } = event else {
         return None;
     };
     match key.as_ref() {
-        keyboard::Key::Named(Named::Enter) => Some(Message::ConfirmDefault),
-        keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
         keyboard::Key::Character("n") => Some(Message::ConfirmNo),
         // Quitting still works: a question nobody can answer must never be able
         // to trap the user in the app. It asks the same question `q` always

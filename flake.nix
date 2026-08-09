@@ -129,7 +129,6 @@
             dontUnpack = true;
 
             nativeBuildInputs = [
-              pkgs.makeBinaryWrapper
               pkgs.imagemagick
               pkgs.libicns
             ];
@@ -146,7 +145,14 @@
               png2icns "$app/Contents/Resources/photo-viewer.icns" \
                 icon_16.png icon_32.png icon_128.png icon_256.png icon_512.png
 
-              makeWrapper ${viewer}/bin/photo-viewer "$app/Contents/MacOS/PhotoViewer"
+              # Copy the binary in, don't wrap it. A makeWrapper stub execs the
+              # store path, and after that exec the main executable no longer
+              # sits under a Contents/MacOS — so CFBundleGetMainBundle finds no
+              # bundle, the process runs with no Info.plist, and AppKit answers
+              # Finder's open event with "PhotoViewer does not support ...".
+              # Nothing needs wrapping here anyway (no env to set).
+              cp ${viewer}/bin/photo-viewer "$app/Contents/MacOS/PhotoViewer"
+              chmod u+w "$app/Contents/MacOS/PhotoViewer"
             '';
           };
 

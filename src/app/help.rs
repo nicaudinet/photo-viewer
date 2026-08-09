@@ -123,6 +123,6 @@ mod tests {
             .flat_map(|(_, rows)| rows)
             .find(|row| row.desc == "Close this help")
             .expect("the overlay must name its own way out");
-        assert_eq!(closing.keys, "? / Esc");
+        assert_eq!(closing.keys, "? / esc");
     }
 }

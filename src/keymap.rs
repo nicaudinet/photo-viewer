@@ -170,10 +170,10 @@ fn named_label(named: Named) -> &'static str {
         // Spelled out rather than drawn: the return symbol is one more glyph to
         // decode in a column read at a glance.
         Named::Enter => "enter",
-        Named::Escape => "Esc",
         // Lower case, like the letter keys beside them: a capital in this
-        // column means shift is part of the chord. `Esc` keeps its capital as
-        // an abbreviation rather than a word.
+        // column means shift is part of the chord, so even an abbreviation
+        // stays down.
+        Named::Escape => "esc",
         Named::Space => "space",
         Named::ArrowLeft => "\u{2190}",
         Named::ArrowRight => "\u{2192}",
@@ -458,7 +458,8 @@ mod tests {
         assert_eq!(Chord::shift('R').label(), "R");
         // A word, not the return symbol.
         assert_eq!(Chord::named(Named::Enter).label(), "enter");
-        assert_eq!(Chord::named(Named::Escape).label(), "Esc");
+        // Down even as an abbreviation: a capital here would read as shift.
+        assert_eq!(Chord::named(Named::Escape).label(), "esc");
     }
 
     /// A state with a mode, standing in for a screen with one.

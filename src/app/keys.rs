@@ -66,9 +66,9 @@ impl App {
     ///
     /// A key that either of them answers also closes the help overlay: it is a
     /// reference, not a mode, so nothing has to be dismissed before working.
-    /// The close happens *after* the key is dispatched, so `Esc` — whose first
-    /// rung is the help itself — takes that rung and stops there rather than
-    /// closing the help and clearing a selection with the one press.
+    /// `Esc` is no exception — closing the list is something a press does on its
+    /// way past, not instead of its work, so the same press goes on to drop
+    /// whatever the screen was holding.
     pub(super) fn key(&mut self, event: keyboard::Event) -> Task<Message> {
         // Clicks read their modifiers from `App::modifiers`, since a `button`
         // press carries none of its own. Not a binding: nothing was pressed
@@ -78,22 +78,26 @@ impl App {
         }
 
         let was_open = self.help_open;
-        match self.dispatch(event) {
-            None => Task::none(),
-            Some(task) => {
-                if was_open {
-                    self.help_open = false;
-                }
-                task
-            }
+        // `Esc` closes the help even when the screen below has nothing left to
+        // drop, so it counts as answered whether or not a task comes back.
+        let escaped = was_open && is_escape(&event);
+        let task = self.dispatch(event);
+        if was_open && (task.is_some() || escaped) {
+            self.help_open = false;
         }
+        task.unwrap_or_else(Task::none)
     }
 
     /// Offer the key to the app's keymap, then to the live screen's. `None` if
     /// neither of them binds it — which is what leaves the help up.
     fn dispatch(&mut self, event: keyboard::Event) -> Option<Task<Message>> {
-        if let Some(message) = lookup(APP, self, &event) {
-            return Some(self.update(message));
+        // The help's own `Esc` rung is not a stopping point: the caller closes
+        // the list, and the key carries on down the screen's ladder. It stays a
+        // binding all the same, so the help can name the key that dismisses it.
+        if !(self.help_open && is_escape(&event)) {
+            if let Some(message) = lookup(APP, self, &event) {
+                return Some(self.update(message));
+            }
         }
 
         // Look the key up first and act on the answer second: the lookup
@@ -126,13 +130,22 @@ impl App {
     }
 }
 
+/// Whether `event` is a bare `Esc` press.
+fn is_escape(event: &keyboard::Event) -> bool {
+    matches!(
+        event,
+        keyboard::Event::KeyPressed { key, modifiers, .. }
+            if key.as_ref() == keyboard::Key::Named(Named::Escape) && !modifiers.command()
+    )
+}
+
 /// The keys the app claims for itself: the ones that mean the same thing on
 /// every screen. Anything else is the live screen's to answer.
 ///
-/// `Esc` is claimed only while the help is up. Below that rung it belongs to
+/// `Esc` is listed only while the help is up, and only to say the help closes
+/// with it — the press itself is not stopped here. Every rung below belongs to
 /// whichever screen has something to drop — a painted range, a selection, the
-/// stack the user is standing in — and falling through to that screen's own
-/// table is what keeps each rung with the thing it drops.
+/// stack the user is standing in.
 const APP: &[Binding<App, Message>] = &[
     // `?` reaches here as the modified key: on a US layout the key pressed is
     // `/`, and the `?` exists only once shift is applied.
@@ -206,7 +219,13 @@ fn answer_key(event: keyboard::Event) -> Option<Message> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
+    use crate::core::library::Library;
+    use crate::core::pointed_list::PointedList;
+    use crate::core::tags::Tags;
+    use crate::screens::wall::WallState;
 
     /// An app on the empty screen with the help up. Built directly rather than
     /// through `App::new`, which reads `std::env::args` — under a test harness
@@ -286,12 +305,41 @@ mod tests {
     }
 
     #[test]
-    fn escape_takes_the_help_rung_and_stops_there() {
+    fn escape_closes_the_help_with_nothing_below_it() {
         let mut app = helped();
         let _ = app.key(press(keyboard::Key::Named(Named::Escape)));
         assert!(!app.help_open);
         // And with the help down it is no longer the app's key at all: the
         // rungs below belong to the live screen.
         assert!(lookup(APP, &app, &press(keyboard::Key::Named(Named::Escape))).is_none());
+    }
+
+    /// A wall of one photo, that photo selected — so Esc has something to drop.
+    fn selected_wall() -> WallState {
+        let files = vec![PathBuf::from("0.jpg")];
+        WallState::new(Library {
+            all: files.clone(),
+            paths: PointedList::new(files.clone()).unwrap(),
+            image_dir: PathBuf::from("/wall"),
+            selection: files.into_iter().collect(),
+            tags: Tags::new(),
+            filter: None,
+            grouping: None,
+        })
+    }
+
+    #[test]
+    fn escape_reaches_the_screen_through_the_help() {
+        let mut app = helped();
+        app.screen = Screen::Wall(selected_wall());
+        let _ = app.key(press(keyboard::Key::Named(Named::Escape)));
+        assert!(!app.help_open);
+        let Screen::Wall(wall) = &app.screen else {
+            unreachable!("the wall was replaced")
+        };
+        assert!(
+            wall.library.selection.is_empty(),
+            "the help swallowed the press instead of passing it on"
+        );
     }
 }

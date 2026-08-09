@@ -53,7 +53,10 @@ pub(crate) enum Message {
 
     // Transitions between screens — owned by `App` because a per-screen update
     // can't reassign `self.screen`.
-    ToggleWall,
+    /// `w` from the single view: back out to the wall the photo came from.
+    /// There is no key the other way — the wall opens a photograph by naming
+    /// it, with Enter or a click.
+    ShowWall,
     /// `o`: pick a single image file to open (single view).
     OpenFile,
     OpenFilePicked(Option<PathBuf>),

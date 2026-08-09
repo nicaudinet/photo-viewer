@@ -103,9 +103,10 @@ impl App {
         }
     }
 
-    /// Move the library across to the other view. The losing view's decode
-    /// cache is dropped, so the new view always decodes fresh.
-    pub(super) fn toggle_wall(&mut self) -> Task<Message> {
+    /// Leave the single view for the wall its library belongs to. The
+    /// counterpart to `open_index`; the single view's decode cache is dropped,
+    /// so the wall always decodes fresh.
+    pub(super) fn show_wall(&mut self) -> Task<Message> {
         match std::mem::replace(&mut self.screen, Screen::Empty) {
             Screen::Single(s) => {
                 let mut wall = WallState::new(s.library);
@@ -116,14 +117,12 @@ impl App {
                 self.screen = Screen::Wall(wall);
                 task
             }
-            Screen::Wall(mut w) => {
-                self.beneath = w.parent.take();
-                let mut single = SingleState::new(w.library);
-                let task = single.decode_current();
-                self.screen = Screen::Single(single);
-                task
+            // Only the single view has a wall to go back to; restore anything
+            // else.
+            other => {
+                self.screen = other;
+                Task::none()
             }
-            Screen::Empty => Task::none(),
         }
     }
 

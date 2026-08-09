@@ -161,17 +161,14 @@ const APP: &[Binding<App, Message>] = &[
         |app| app.help_open,
         |_| Message::ToggleHelp,
     ),
-    Binding::when(
-        &[Chord::key('w')],
-        "Show this photo on its own",
-        |app| matches!(app.screen, Screen::Wall(_)),
-        |_| Message::ToggleWall,
-    ),
+    // One way only. On the wall a photograph is opened by pointing at it —
+    // Enter, or a click — so `w` there would have to mean "whichever one is
+    // under the cursor", which is not what the key says anywhere else.
     Binding::when(
         &[Chord::key('w')],
         "Show the wall of photos",
         |app| matches!(app.screen, Screen::Single(_)),
-        |_| Message::ToggleWall,
+        |_| Message::ShowWall,
     ),
     Binding::always(&[Chord::key('o')], "Open a file or folder", |_| {
         Message::OpenFile
@@ -326,6 +323,17 @@ mod tests {
             filter: None,
             grouping: None,
         })
+    }
+
+    #[test]
+    fn the_wall_has_no_key_back_to_the_single_view() {
+        // A photograph is opened by naming it — Enter, or a click — so `w` on
+        // the wall must not pick one for the user.
+        let mut app = helped();
+        app.screen = Screen::Wall(selected_wall());
+        let _ = app.key(press_char("w"));
+        assert!(matches!(app.screen, Screen::Wall(_)), "the wall was left");
+        assert!(app.help_open, "a key that does nothing must change nothing");
     }
 
     #[test]

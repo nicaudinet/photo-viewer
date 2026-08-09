@@ -66,6 +66,27 @@ impl SingleState {
         }
     }
 
+    /// Drop images that are no longer on disk and show whatever the cursor
+    /// lands on. Returns `false` if the library is now empty, at which point
+    /// there is no photograph left to show — only the app can act on that.
+    pub(crate) fn removed(&mut self, gone: &HashSet<PathBuf>) -> (bool, Task<Message>) {
+        // A rotate still writing a trashed file has nothing to come back to,
+        // and the claim it holds would outlive the path it was taken on.
+        self.rotating.retain(|path| !gone.contains(path));
+
+        let showing = self.library.current().clone();
+        if !self.library.remove(gone) {
+            return (false, Task::none());
+        }
+        // The cursor lands on the survivor nearest where it was, which is a
+        // different photograph exactly when the one on screen went.
+        let task = match self.library.current() == &showing {
+            true => Task::none(),
+            false => self.decode_current(),
+        };
+        (true, task)
+    }
+
     /// Kick off an off-thread decode of the current image, tagged with a fresh
     /// generation so an earlier in-flight decode can't overwrite it.
     pub(crate) fn decode_current(&mut self) -> Task<Message> {

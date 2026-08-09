@@ -15,13 +15,16 @@ use super::SingleState;
 
 /// What a key press on this screen asks for.
 ///
-/// Nearly all of it the screen answers itself. `w` does not: leaving for the
-/// wall replaces the screen, which only the app can do. Naming it here rather
-/// than in the app's own table is what puts it under "Photo" in the help — it
-/// is a key of this screen, not one that works everywhere.
+/// Nearly all of it the screen answers itself. Two keys do not: leaving for the
+/// wall replaces the screen, and trashing puts a question up first and may leave
+/// no library to show — both of which only the app can do. Naming them here
+/// rather than in the app's own table is what puts them under "Photo" in the
+/// help — they are keys of this screen, not ones that work everywhere.
 pub(crate) enum SingleKey {
     /// This screen's own business.
     Msg(SingleMsg),
+    /// Ask before trashing the photograph on screen.
+    Trash,
     /// Leave the photograph and show the wall it came from.
     ShowWall,
 }
@@ -77,6 +80,11 @@ const SINGLE: &[Binding<SingleState, SingleKey>] = &[
         |_| SingleKey::Msg(SingleMsg::RotateClockwise),
     )
     .merged(),
+    // The same key as on the wall, and the same question — only there is no
+    // selection here to ask about, so it names the one photograph on screen.
+    Binding::always(&[Chord::key('d')], "Move this photo to the trash", |_| {
+        SingleKey::Trash
+    }),
     // Last, because it is the way out rather than something done to the photo —
     // and one way only. The wall has no `w` back: there a photograph is opened
     // by pointing at it, so the key would have to mean "whichever one is under

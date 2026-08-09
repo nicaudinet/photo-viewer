@@ -31,6 +31,7 @@ to another folder or trashed in one go. See
 | `r` | Rotate anticlockwise 90° — writes the file to disk |
 | `Shift+R` | Rotate clockwise 90° — writes the file to disk |
 | `f` | Favourite this image |
+| `d` | Move this image to the trash (asks first) |
 | `w` | Switch to wall view |
 
 Every action in the single view applies to the current image and nothing else.

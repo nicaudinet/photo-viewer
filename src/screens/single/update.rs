@@ -207,6 +207,55 @@ mod tests {
     }
 
     #[test]
+    fn trashing_the_photo_on_screen_shows_the_next_one() {
+        let mut state = single(3);
+        let gone: HashSet<PathBuf> = [state.library.current().clone()].into();
+
+        let before = state.generation;
+        let (alive, _) = state.removed(&gone);
+        assert!(alive);
+        assert_eq!(state.library.current(), &PathBuf::from("1.jpg"));
+        assert_ne!(
+            state.generation, before,
+            "a different photograph was left undecoded"
+        );
+    }
+
+    #[test]
+    fn trashing_the_last_photo_leaves_nothing_to_show() {
+        let mut state = single(1);
+        let gone: HashSet<PathBuf> = [state.library.current().clone()].into();
+        // The caller's cue to fall back to the empty screen: `PointedList`
+        // cannot be empty, so there is no library left to point at.
+        assert!(!state.removed(&gone).0);
+    }
+
+    #[test]
+    fn a_removal_elsewhere_does_not_re_decode() {
+        let mut state = single(3);
+        let gone: HashSet<PathBuf> = [PathBuf::from("2.jpg")].into();
+
+        let before = state.generation;
+        assert!(state.removed(&gone).0);
+        assert_eq!(state.library.current(), &PathBuf::from("0.jpg"));
+        assert_eq!(
+            state.generation, before,
+            "the image on screen was decoded again for nothing"
+        );
+    }
+
+    #[test]
+    fn trashing_a_photo_mid_rotate_releases_its_claim() {
+        let mut state = single(2);
+        let path = state.library.current().clone();
+        assert_eq!(state.claim_rotate(), Some(path.clone()));
+        // The write has nowhere to land, and the claim would otherwise outlive
+        // the file it was taken on.
+        assert!(state.removed(&[path].into()).0);
+        assert!(state.rotating.is_empty());
+    }
+
+    #[test]
     fn a_decode_landing_from_an_earlier_visit_is_dropped() {
         // Leaving the single view and coming back builds a fresh state. The
         // decode the previous one asked for is still in flight.

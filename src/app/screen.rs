@@ -128,7 +128,7 @@ impl App {
 
     /// Images have left the library's folder — trashed, or moved elsewhere.
     /// Falls back to the empty screen if none are left, which is why this sits
-    /// here rather than on the wall: only `App` can change screens.
+    /// here rather than on a screen: only `App` can change screens.
     pub(super) fn removed(
         &mut self,
         gone: Vec<PathBuf>,
@@ -152,15 +152,19 @@ impl App {
             self.beneath = None;
         }
 
-        match &mut self.screen {
-            Screen::Wall(w) => match w.removed(&gone) {
-                (true, task) => task,
-                (false, _) => {
-                    self.screen = Screen::Empty;
-                    Task::none()
-                }
-            },
-            _ => Task::none(),
+        // Both loaded screens answer the same way: whether anything is left,
+        // and what to do about what is.
+        let pruned = match &mut self.screen {
+            Screen::Wall(w) => w.removed(&gone),
+            Screen::Single(s) => s.removed(&gone),
+            Screen::Empty => (true, Task::none()),
+        };
+        match pruned {
+            (true, task) => task,
+            (false, _) => {
+                self.screen = Screen::Empty;
+                Task::none()
+            }
         }
     }
 

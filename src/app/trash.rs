@@ -35,6 +35,28 @@ impl App {
         });
     }
 
+    /// `d` in the single view: ask before trashing the photograph on screen.
+    ///
+    /// No count, and no detail naming the file: exactly one photograph can be
+    /// meant, and it is the one filling the window behind the question.
+    pub(super) fn ask_about_photo_trash(&mut self) {
+        let Screen::Single(s) = &self.screen else {
+            return;
+        };
+        self.confirm = Some(Confirm {
+            prompt: "Move this photo to the trash?".to_string(),
+            detail: None,
+            choices: vec![Choice {
+                key: 'y',
+                label: "yes",
+                // Named now rather than re-read when the answer comes: the
+                // question was asked about the photograph that was on screen,
+                // and that is the one that has to go.
+                message: Message::Trash(vec![s.library.current().clone()]),
+            }],
+        });
+    }
+
     /// `p`: ask before keeping the photograph under the cursor and trashing
     /// the rest of the stack it is in.
     ///

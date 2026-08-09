@@ -113,6 +113,10 @@ impl App {
 
         Some(match keyed? {
             Keyed::Single(SingleKey::Msg(msg)) => self.update(Message::Single(msg)),
+            Keyed::Single(SingleKey::Trash) => {
+                self.ask_about_photo_trash();
+                Task::none()
+            }
             Keyed::Single(SingleKey::ShowWall) => self.show_wall(),
             Keyed::Wall(WallKey::Msg(msg)) => self.update(Message::Wall(msg)),
             Keyed::Wall(WallKey::Open(index)) => self.open_index(index),
@@ -332,6 +336,37 @@ mod tests {
         let _ = app.key(press_char("w"));
         assert!(matches!(app.screen, Screen::Wall(_)), "the wall was left");
         assert!(app.help_open, "a key that does nothing must change nothing");
+    }
+
+    #[test]
+    fn d_on_a_photo_asks_before_trashing_that_photo() {
+        use crate::screens::single::SingleState;
+
+        let files = vec![PathBuf::from("0.jpg"), PathBuf::from("1.jpg")];
+        let mut app = helped();
+        app.screen = Screen::Single(SingleState::new(Library {
+            all: files.clone(),
+            paths: PointedList::new(files).unwrap(),
+            image_dir: PathBuf::from("/photos"),
+            selection: Default::default(),
+            tags: Tags::new(),
+            filter: None,
+            grouping: None,
+        }));
+
+        let _ = app.key(press_char("d"));
+        let confirm = app.confirm.as_ref().expect("d trashed without asking");
+        let choice = confirm
+            .choices
+            .iter()
+            .find(|c| c.key == 'y')
+            .expect("the question offered no way to say yes");
+        // The one photograph on screen, and no other — whatever the wall this
+        // library came from had selected.
+        assert!(matches!(
+            &choice.message,
+            Message::Trash(paths) if paths == &[PathBuf::from("0.jpg")]
+        ));
     }
 
     #[test]

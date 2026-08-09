@@ -9,6 +9,7 @@ use iced::Task;
 
 use crate::screens::wall::Click;
 
+use super::confirm::{Choice, Confirm};
 use super::{App, Message, Screen};
 
 impl App {
@@ -19,7 +20,8 @@ impl App {
         if self.confirm.is_some()
             && !matches!(
                 message,
-                Message::ConfirmNo
+                Message::AskQuit
+                    | Message::ConfirmNo
                     | Message::ConfirmChoice(_)
                     | Message::ConfirmDefault
                     | Message::Escape
@@ -33,6 +35,10 @@ impl App {
         }
 
         match message {
+            Message::AskQuit => {
+                self.ask_about_quit();
+                Task::none()
+            }
             Message::Quit => iced::exit(),
             Message::ToggleHelp => {
                 self.help_open = !self.help_open;
@@ -140,6 +146,24 @@ impl App {
                 _ => Task::none(),
             },
         }
+    }
+
+    /// `q`: ask before leaving.
+    ///
+    /// Nothing the app holds survives it closing — a stack being sifted, a
+    /// selection painted across a hundred thumbnails, a folder that took a
+    /// while to read — and `q` sits one key away from `w`. So the key that
+    /// ends the app asks first, like every other key that cannot be undone.
+    fn ask_about_quit(&mut self) {
+        self.confirm = Some(Confirm {
+            prompt: "Quit?".to_string(),
+            detail: None,
+            choices: vec![Choice {
+                key: 'y',
+                label: "quit",
+                message: Message::Quit,
+            }],
+        });
     }
 
     /// Build the first native file panel, once, at a moment nobody minds.

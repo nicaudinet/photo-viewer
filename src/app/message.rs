@@ -16,6 +16,8 @@ use super::destination::TransferPlan;
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     // Global — handled at the top level regardless of screen.
+    /// `q` — ask before leaving. `Quit` is what a yes to that question sends.
+    AskQuit,
     Quit,
     ToggleFullscreen,
     ToggleHelp,

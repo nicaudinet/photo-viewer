@@ -20,7 +20,7 @@ pub(super) struct Confirm {
     pub(super) detail: Option<String>,
     /// The answers on offer, in order. Enter picks the first, so that one must
     /// always be the safe reading of the question. `n` and Esc always cancel,
-    /// so no answer may claim either key; nor `q`, which still quits.
+    /// so no answer may claim either key; nor `q`, which asks about quitting.
     pub(super) choices: Vec<Choice>,
 }
 

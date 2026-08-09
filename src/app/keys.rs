@@ -175,7 +175,7 @@ const APP: &[Binding<App, Message>] = &[
         |app| !app.fullscreen,
         |_| Message::ToggleFullscreen,
     ),
-    Binding::always(&[Chord::key('q')], "Quit", |_| Message::Quit),
+    Binding::always(&[Chord::key('q')], "Quit", |_| Message::AskQuit),
 ];
 
 /// The keyboard while a question is up: the keys it names, and nothing else.
@@ -188,8 +188,10 @@ fn answer_key(event: keyboard::Event) -> Option<Message> {
         keyboard::Key::Named(Named::Escape) => Some(Message::Escape),
         keyboard::Key::Character("n") => Some(Message::ConfirmNo),
         // Quitting still works: a question nobody can answer must never be able
-        // to trap the user in the app.
-        keyboard::Key::Character("q") => Some(Message::Quit),
+        // to trap the user in the app. It asks the same question `q` always
+        // asks, replacing whatever was up, so the way out is two presses rather
+        // than one — never none.
+        keyboard::Key::Character("q") => Some(Message::AskQuit),
         keyboard::Key::Character(c) => {
             let mut chars = c.chars();
             match (chars.next(), chars.next()) {
@@ -259,6 +261,27 @@ mod tests {
         let mut app = helped();
         let _ = app.key(press(keyboard::Key::Character("?".into())));
         assert!(!app.help_open);
+    }
+
+    #[test]
+    fn quitting_asks_first() {
+        let mut app = helped();
+        let _ = app.key(press_char("q"));
+        let confirm = app.confirm.as_ref().expect("q left without asking");
+        assert!(
+            confirm.choices.iter().any(|c| c.key == 'y'),
+            "the question offered no way to say yes"
+        );
+    }
+
+    #[test]
+    fn a_question_on_screen_cannot_swallow_the_way_out() {
+        // Whatever is being asked, `q` asks about leaving instead — so no
+        // question can hold the user in the app.
+        assert!(matches!(
+            answer_key(press_char("q")),
+            Some(Message::AskQuit)
+        ));
     }
 
     #[test]

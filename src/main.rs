@@ -12,7 +12,7 @@
 //!   the wall to the favourites.
 //! - `w` toggles between the two; `o` opens a directory (native picker); a
 //!   directory opens in wall view, a file in single view.
-//! - Empty view when no image is loaded. `q` quit, `e` fullscreen, `?`/`Esc`
+//! - Empty view when no image is loaded. `q` quit (asks first), `e` fullscreen, `?`/`Esc`
 //!   help.
 //!
 //! Favourites are a tag over a selection (`core/tags.rs`); mark-to-delete is

@@ -5,10 +5,9 @@
 //! badge is how many photographs the tile stands for.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::font::Weight;
 use iced::theme::palette::lighten;
 use iced::widget::{button, container, text};
-use iced::{Background, Border, Color, Element, Font, Length, Shadow, Theme};
+use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
 
 use crate::core::library::{RangeOp, Selected};
 use crate::core::tags;
@@ -34,13 +33,14 @@ pub(super) const TINT_PARTIAL: f32 = 0.16;
 /// makes it, and how big the number inside it is drawn. A disc that grew to fit
 /// a three-digit count would swallow the corner of the photograph, so it
 /// stretches sideways into a pill instead.
-const COUNT_SIZE: f32 = 30.0;
-const COUNT_DIGIT: f32 = 12.0;
-const COUNT_TEXT: f32 = 19.0;
+const COUNT_SIZE: f32 = 36.0;
+const COUNT_DIGIT: f32 = 14.0;
+const COUNT_TEXT: f32 = 23.0;
 /// How thick the outline around the count disc is. The disc is pale, so against
 /// an overexposed sky it would otherwise dissolve into the photograph; the
-/// outline is what holds its shape whatever it lands on.
-const COUNT_BORDER: f32 = 2.0;
+/// outline is what holds its shape whatever it lands on. Hairline: any heavier
+/// and a disc this size reads as a sticker rather than as part of the wall.
+const COUNT_BORDER: f32 = 1.0;
 
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
@@ -123,10 +123,6 @@ pub(super) fn count_badge(size: usize) -> Element<'static, Message> {
         container(
             text(label.clone())
                 .size(COUNT_TEXT)
-                .font(Font {
-                    weight: Weight::Bold,
-                    ..Font::DEFAULT
-                })
                 .color(badge_ink(Accent::Stack)),
         )
         .center_x(Length::Fixed(count_width(label.len())))

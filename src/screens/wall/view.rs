@@ -123,21 +123,22 @@ impl WallState {
             );
         }
         if look.badge {
+            // Bottom-right: the count has the top-right corner, and a selected
+            // stack has to be able to say both things at once.
             layers.push(corner_badge(
                 "\u{2713}".to_string(),
                 Accent::Select,
                 Horizontal::Right,
-                Vertical::Top,
+                Vertical::Bottom,
             ));
         }
         if look.stack > 1 {
-            // Bottom-right: the tick has the top-right corner, and a selected
-            // stack has to be able to say both things at once.
             layers.push(count_badge(look.stack));
         }
         if look.star {
-            // Opposite corner from the selection tick, so a favourite that is
-            // also selected shows both rather than one hiding the other.
+            // Top-left, the one corner the other two marks never take, so a
+            // favourite that is also selected — or also a stack — shows every
+            // mark it has earned rather than one hiding another.
             layers.push(favourite_star());
         }
 

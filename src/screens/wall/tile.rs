@@ -5,9 +5,10 @@
 //! badge is how many photographs the tile stands for.
 
 use iced::alignment::{Horizontal, Vertical};
+use iced::font::Weight;
 use iced::theme::palette::lighten;
 use iced::widget::{button, container, text};
-use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
+use iced::{Background, Border, Color, Element, Font, Length, Shadow, Theme};
 
 use crate::core::library::{RangeOp, Selected};
 use crate::core::tags;
@@ -36,6 +37,10 @@ pub(super) const TINT_PARTIAL: f32 = 0.16;
 const COUNT_SIZE: f32 = 30.0;
 const COUNT_DIGIT: f32 = 12.0;
 const COUNT_TEXT: f32 = 19.0;
+/// How thick the outline around the count disc is. The disc is pale, so against
+/// an overexposed sky it would otherwise dissolve into the photograph; the
+/// outline is what holds its shape whatever it lands on.
+const COUNT_BORDER: f32 = 2.0;
 
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
@@ -104,8 +109,9 @@ pub(crate) fn favourite_star() -> Element<'static, Message> {
     )
 }
 
-/// How many photos a stack stands for, in the corner the other two marks leave
-/// free — the star is top-left and the selection tick top-right.
+/// How many photos a stack stands for, top-right — the loudest corner, and how
+/// deep a stack is is the thing you are scanning the wall for. The star keeps
+/// top-left and the selection tick was moved down to make room.
 ///
 /// The count alone on a disc. With nothing drawn behind the thumbnail this is
 /// the only thing saying a tile stands for more than one photograph, so it is a
@@ -117,14 +123,28 @@ pub(super) fn count_badge(size: usize) -> Element<'static, Message> {
         container(
             text(label.clone())
                 .size(COUNT_TEXT)
+                .font(Font {
+                    weight: Weight::Bold,
+                    ..Font::DEFAULT
+                })
                 .color(badge_ink(Accent::Stack)),
         )
         .center_x(Length::Fixed(count_width(label.len())))
         .center_y(Length::Fixed(COUNT_SIZE))
-        .style(|theme: &Theme| pill_style(theme, Accent::Stack))
+        .style(|theme: &Theme| {
+            let base = pill_style(theme, Accent::Stack);
+            container::Style {
+                border: Border {
+                    color: Color::BLACK,
+                    width: COUNT_BORDER,
+                    ..base.border
+                },
+                ..base
+            }
+        })
         .into(),
         Horizontal::Right,
-        Vertical::Bottom,
+        Vertical::Top,
     )
 }
 

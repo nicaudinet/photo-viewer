@@ -1,21 +1,19 @@
 //! How one tile is decorated.
 //!
 //! Independent channels, so a tile can say several things at once: the ring is
-//! where the cursor is, the tint and badge are what is selected, and the fanned
-//! cards and `×n` badge are how many photographs the tile stands for.
+//! where the cursor is, the tint and badge are what is selected, and the count
+//! badge is how many photographs the tile stands for.
 
 use iced::alignment::{Horizontal, Vertical};
 use iced::theme::palette::lighten;
-use iced::widget::{button, container, image, text};
-use iced::{
-    Background, Border, Color, ContentFit, Element, Length, Radians, Rotation, Shadow, Theme,
-};
+use iced::widget::{button, container, text};
+use iced::{Background, Border, Color, Element, Length, Shadow, Theme};
 
 use crate::core::library::{RangeOp, Selected};
 use crate::core::tags;
 use crate::Message;
 
-use super::layout::{SEL_BORDER, THUMB_WIDTH};
+use super::layout::SEL_BORDER;
 use super::select::WallMode;
 use super::WallState;
 use crate::screens::ICON_MARGIN;
@@ -31,25 +29,11 @@ pub(super) const TINT_PENDING: f32 = 0.18;
 /// one, so a partly-selected pile cannot be mistaken for a decided one.
 pub(super) const TINT_PARTIAL: f32 = 0.16;
 
-/// How far the cards behind a stack lean, in degrees. Small: enough that the
-/// corners show past the photograph, not so much that the pile looks dropped.
-const FAN_DEGREES: f32 = 5.0;
-/// How far the photograph is pulled in from the edge of its tile to leave room
-/// for the cards behind it. See [`fan_inset`].
-///
-/// A stack cannot simply overhang its tile. iced clips a rotated image to its
-/// *unrotated* layout bounds, and a `Stack` gives every layer at most the size
-/// of its base layer, so a card can never be drawn outside the tile it is in:
-/// left at full size it would be clipped back to the photograph's own rect and
-/// then hidden behind it. The pile is therefore made room for rather than
-/// allowed to spill — which also means it costs the masonry nothing, since the
-/// tile is exactly the size it always was.
-const FAN_INSET: f32 = 10.0;
-/// The colour of a blank card, and how solid it is drawn. Grey rather than
-/// paper-white so it does not glare on the dark theme, and slightly transparent
-/// so it settles behind the photograph instead of competing with it.
-const CARD_RGBA: [u8; 4] = [0x8a, 0x8a, 0x8e, 0xff];
-const CARD_OPACITY: f32 = 0.75;
+/// The diameter of the count disc, and how much wider each digit past the first
+/// makes it. A disc that grew to fit a three-digit count would swallow the
+/// corner of the photograph, so it stretches sideways into a pill instead.
+const COUNT_SIZE: f32 = 22.0;
+const COUNT_DIGIT: f32 = 9.0;
 
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
@@ -107,13 +91,28 @@ pub(crate) fn favourite_star() -> Element<'static, Message> {
 
 /// How many photos a stack stands for, in the corner the other two marks leave
 /// free — the star is top-left and the selection tick top-right.
+///
+/// The count alone on a disc. With nothing drawn behind the thumbnail this is
+/// the only thing saying a tile stands for more than one photograph, so it is a
+/// filled circle rather than a `×n` pill: a shape the eye picks out while
+/// scanning a wall, which is how Google Photos marks a stack.
 pub(super) fn count_badge(size: usize) -> Element<'static, Message> {
-    corner_badge(
-        format!("\u{d7}{size}"),
-        Accent::Stack,
+    let label = size.to_string();
+    in_corner(
+        container(text(label.clone()).size(14).color(Color::WHITE))
+            .center_x(Length::Fixed(count_width(label.len())))
+            .center_y(Length::Fixed(COUNT_SIZE))
+            .style(|theme: &Theme| pill_style(theme, Accent::Stack))
+            .into(),
         Horizontal::Right,
         Vertical::Bottom,
     )
+}
+
+/// How wide the count disc is for a count of `digits` digits: a circle at one
+/// digit, stretched by [`COUNT_DIGIT`] for each one after it.
+fn count_width(digits: usize) -> f32 {
+    COUNT_SIZE + COUNT_DIGIT * digits.saturating_sub(1) as f32
 }
 
 /// A symbol in a rounded pill in one corner of a tile.
@@ -131,86 +130,40 @@ pub(super) fn corner_badge(
         Accent::Favourite => Color::BLACK,
         _ => Color::WHITE,
     };
-    container(
+    in_corner(
         container(text(symbol).size(18).color(fg))
             .padding([1, 7])
-            .style(move |theme: &Theme| container::Style {
-                background: Some(Background::Color(accent_color(theme, accent))),
-                border: Border {
-                    radius: 999.0.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            }),
+            .style(move |theme: &Theme| pill_style(theme, accent))
+            .into(),
+        side,
+        edge,
     )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_x(side)
-    .align_y(edge)
-    .padding(ICON_MARGIN)
-    .into()
 }
 
-/// One blank card behind a stack's thumbnail, filling the tile and leaning
-/// `degrees`. What shows of it is the wedge between its edge and the inset
-/// photograph, which is wider at one pair of corners than the other — the whole
-/// of the effect.
-///
-/// A stretched single pixel rather than a styled container, because rotation in
-/// iced belongs to images alone — which also means the colour is baked into the
-/// pixel instead of coming from the palette. A neutral grey is the one choice
-/// that reads against a light theme and a dark one, and the card is a backdrop:
-/// all it has to do is not be the photograph.
-///
-/// [`Rotation::Floating`] keeps the layout bounds it was given, so a leaning
-/// card never reflows the masonry around it.
-pub(super) fn back_card(height: f32, degrees: f32) -> Element<'static, Message> {
-    image(card_pixel())
-        .width(Length::Fixed(THUMB_WIDTH as f32))
-        .height(Length::Fixed(height))
-        .content_fit(ContentFit::Fill)
-        // Nothing to interpolate in one pixel, and nearest keeps the edges
-        // crisp where the card leans out from behind the photo.
-        .filter_method(image::FilterMethod::Nearest)
-        .rotation(Rotation::Floating(Radians(degrees.to_radians())))
-        .opacity(CARD_OPACITY)
+/// A mark pinned to one corner of a tile, inside the margin every icon keeps.
+fn in_corner(
+    mark: Element<'static, Message>,
+    side: Horizontal,
+    edge: Vertical,
+) -> Element<'static, Message> {
+    container(mark)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(side)
+        .align_y(edge)
+        .padding(ICON_MARGIN)
         .into()
 }
 
-/// The one pixel every card is drawn from.
-///
-/// Built once and cloned. `Handle::from_rgba` mints a fresh id per call, so a
-/// handle built per tile would upload a new texture for every stack on every
-/// frame.
-fn card_pixel() -> image::Handle {
-    thread_local! {
-        static CARD: image::Handle = image::Handle::from_rgba(1, 1, CARD_RGBA.to_vec());
-    }
-    CARD.with(image::Handle::clone)
-}
-
-/// How far the cards behind a stack lean, and how many of them there are.
-///
-/// Two at most however deep the pile is: a third adds no information the `×n`
-/// badge is not already giving, and every card is one more thing leaning into
-/// the tiles beside it. A pair of photos gets a single card, so that what is
-/// drawn matches what is there.
-pub(super) fn fan_angles(size: usize) -> Vec<f32> {
-    match size {
-        0 | 1 => Vec::new(),
-        2 => vec![FAN_DEGREES],
-        // Opposite ways, which is what makes it read as a pile pushed about
-        // rather than as one photo printed twice.
-        _ => vec![-FAN_DEGREES, FAN_DEGREES],
-    }
-}
-
-/// How far in from its tile the photograph of a stack of `size` is drawn.
-pub(super) fn fan_inset(size: usize) -> f32 {
-    if fan_angles(size).is_empty() {
-        0.0
-    } else {
-        FAN_INSET
+/// The filled, fully rounded background every corner mark is drawn on.
+fn pill_style(theme: &Theme, accent: Accent) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(accent_color(theme, accent))),
+        border: Border {
+            radius: 999.0.into(),
+            ..Border::default()
+        },
+        ..container::Style::default()
     }
 }
 
@@ -381,34 +334,20 @@ mod tests {
     fn a_photo_on_its_own_stands_for_one() {
         let state = wall(&[200.0; 6], 1);
         let path = state.library.current().clone();
-        // Which is what keeps the cards and the badge off an ungrouped wall:
-        // both are drawn from this number.
+        // Which is what keeps the count badge off an ungrouped wall: it is
+        // drawn from this number.
         assert_eq!(state.tile_look(0, &path, 0).stack, 1);
-        assert!(fan_angles(1).is_empty());
     }
 
     #[test]
-    fn a_pair_of_photos_shows_one_card() {
-        // Two photos, two rectangles: a second card would draw a third photo
-        // that is not there.
-        assert_eq!(fan_angles(2), vec![FAN_DEGREES]);
+    fn a_one_digit_count_is_drawn_on_a_circle() {
+        assert_eq!(count_width(1), COUNT_SIZE);
     }
 
     #[test]
-    fn only_a_stack_makes_room_for_cards() {
-        // A lone photograph fills its tile exactly as it did before stacks
-        // existed, so grouping never changes the size of anything that is not
-        // a stack.
-        assert_eq!(fan_inset(1), 0.0);
-        assert!(fan_inset(2) > 0.0);
-    }
-
-    #[test]
-    fn a_deeper_pile_shows_two_cards_leaning_opposite_ways() {
-        assert_eq!(fan_angles(3), vec![-FAN_DEGREES, FAN_DEGREES]);
-        // However deep it gets: past two, the `\u{d7}n` badge is what says how
-        // many, and more cards only lean further into the neighbouring tiles.
-        assert_eq!(fan_angles(40), fan_angles(3));
+    fn a_longer_count_stretches_the_disc_rather_than_spilling_out_of_it() {
+        assert!(count_width(2) > count_width(1));
+        assert!(count_width(3) > count_width(2));
     }
 
     #[test]

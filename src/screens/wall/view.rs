@@ -12,8 +12,8 @@ use super::layout::{WallLayout, SEL_BORDER, THUMB_WIDTH, TILE_WIDTH, WALL_SPACIN
 use super::message::WallMsg;
 use super::navigate::WALL_ID;
 use super::tile::{
-    accent_color, back_card, corner_badge, count_badge, fan_angles, fan_inset, favourite_star,
-    placeholder_style, thumb_button_style, Accent,
+    accent_color, corner_badge, count_badge, favourite_star, placeholder_style, thumb_button_style,
+    Accent,
 };
 use super::WallState;
 
@@ -72,41 +72,23 @@ impl WallState {
 
     /// The photograph itself, or the placeholder standing in until it decodes.
     ///
-    /// `inset` pulls it in from the edges of its tile, leaving the band the
-    /// cards behind a stack show through. Scaled rather than trimmed, so a
-    /// stacked photo is the same shape as an unstacked one — only smaller — and
-    /// then centred back in the full tile so the two are drawn concentric.
-    fn photo_element<'a>(
-        &'a self,
-        path: &'a PathBuf,
-        height: f32,
-        inset: f32,
-    ) -> Element<'a, Message> {
+    /// Always the full width of its tile: a stack is marked by the count badge
+    /// alone, so grouping never changes the size of anything on the wall.
+    fn photo_element<'a>(&'a self, path: &'a PathBuf, height: f32) -> Element<'a, Message> {
         let full = THUMB_WIDTH as f32;
-        let scale = (full - 2.0 * inset) / full;
-        let photo: Element<'a, Message> = match self.thumbs.get(path) {
+        match self.thumbs.get(path) {
             Some(thumb) => image(thumb.handle.clone())
-                .width(Length::Fixed(full * scale))
-                .height(Length::Fixed(thumb.height as f32 * scale))
+                .width(Length::Fixed(full))
+                .height(Length::Fixed(thumb.height as f32))
                 .into(),
             None => container(text("Loading\u{2026}").size(14))
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
-                .width(Length::Fixed(full * scale))
-                .height(Length::Fixed(height * scale))
+                .width(Length::Fixed(full))
+                .height(Length::Fixed(height))
                 .style(placeholder_style)
                 .into(),
-        };
-
-        if inset == 0.0 {
-            return photo;
         }
-        container(photo)
-            .width(Length::Fixed(full))
-            .height(Length::Fixed(height))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
     }
 
     /// One thumbnail: image (or placeholder), clickable, decorated according to
@@ -119,22 +101,11 @@ impl WallState {
     ) -> Element<'a, Message> {
         let height = self.tile_height(path);
         let look = self.tile_look(index, path, current);
-        let fan = fan_angles(look.stack);
-        // Room for the cards, taken out of the photograph rather than added to
-        // the tile: see `FAN_INSET` for why they cannot simply overhang.
-        let inset = fan_inset(look.stack);
 
         // Layers over the thumbnail, sized to it explicitly rather than left to
         // fill: a `Stack` takes its size from the first child, and the decoded
         // height and the header-derived one can differ by a pixel.
-        //
-        // The cards come first because they go behind, and they are what sizes
-        // the tile when there are any — the photograph is the smaller thing.
-        let mut layers: Vec<Element<'a, Message>> = fan
-            .into_iter()
-            .map(|degrees| back_card(height, degrees))
-            .collect();
-        layers.push(self.photo_element(path, height, inset));
+        let mut layers: Vec<Element<'a, Message>> = vec![self.photo_element(path, height)];
         if let Some(accent) = look.tint {
             let alpha = look.tint_alpha;
             layers.push(

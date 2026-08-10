@@ -45,7 +45,7 @@ impl App {
 
 /// Shared panel styling for the overlays: opaque, so nothing underneath
 /// competes with what the panel has to say.
-pub(super) fn overlay_box(theme: &Theme) -> container::Style {
+pub(crate) fn overlay_box(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
         background: Some(Background::Color(palette.background.weak.color)),
@@ -141,6 +141,35 @@ pub(crate) fn confirm_overlay(
             column![asked, answers]
                 .spacing(18)
                 .align_x(Horizontal::Center),
+        )
+        .padding(20)
+        .style(overlay_box),
+    )
+    .into()
+}
+
+/// Work under way, said the way a question is said: the same panel, the same
+/// key column, so a running operation reads as part of the app rather than as
+/// a strip along an edge.
+///
+/// Unlike a question this swallows nothing — the screen underneath stays live,
+/// and the panel only reports. `esc` is listed because cancelling is the one
+/// thing the user can do about it, and the key belongs to the screen, not here.
+pub(crate) fn progress_overlay(label: String) -> Element<'static, Message> {
+    center(
+        container(
+            column![
+                text(label).size(20),
+                key_row(
+                    Row {
+                        keys: "esc".to_string(),
+                        desc: "Cancel",
+                    },
+                    ANSWER_KEY_WIDTH,
+                ),
+            ]
+            .spacing(18)
+            .align_x(Horizontal::Center),
         )
         .padding(20)
         .style(overlay_box),

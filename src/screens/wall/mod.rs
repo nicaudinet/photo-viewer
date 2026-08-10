@@ -25,9 +25,8 @@
 //! | [`queue`] | an operation over the whole selection, as a plain queue |
 //! | [`batch`] | driving that queue from the wall |
 //! | [`ops`] | what that operation does to one file |
-//! | [`view`], [`bar`], [`tile`] | the widget tree |
+//! | [`view`], [`tile`] | the widget tree |
 
-mod bar;
 mod batch;
 mod group;
 mod keys;

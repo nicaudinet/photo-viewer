@@ -47,11 +47,6 @@ impl Grouping {
         self.threshold = threshold;
     }
 
-    /// How many stacks there are, for the mode bar.
-    pub fn len(&self) -> usize {
-        self.stacks.len()
-    }
-
     /// The photos in the stack `path` stands for, or `None` if it stands only
     /// for itself.
     pub fn stack(&self, path: &Path) -> Option<&[PathBuf]> {
@@ -102,6 +97,15 @@ impl Grouping {
             }
         }
         tiles
+    }
+}
+
+/// How many stacks a pass produced. Nothing on screen counts them — a stack
+/// says so itself, with its badge — so this is only what the tests assert on.
+#[cfg(test)]
+impl Grouping {
+    pub fn len(&self) -> usize {
+        self.stacks.len()
     }
 }
 

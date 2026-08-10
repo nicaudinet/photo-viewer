@@ -33,6 +33,7 @@ use iced::{keyboard, Task};
 
 pub(crate) use message::Message;
 pub(crate) use screen::Screen;
+pub(crate) use view::progress_overlay;
 
 use crate::screens::wall::WallState;
 

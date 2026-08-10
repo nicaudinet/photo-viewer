@@ -6,6 +6,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, container, image, scrollable, text, Column, Row, Space, Stack};
 use iced::{Background, Color, Element, Length, Theme};
 
+use crate::app::progress_overlay;
 use crate::Message;
 
 use super::layout::{WallLayout, SEL_BORDER, THUMB_WIDTH, TILE_WIDTH, WALL_SPACING};
@@ -35,12 +36,27 @@ impl WallState {
             .on_scroll(|viewport| Message::Wall(WallMsg::Scrolled(viewport.absolute_offset().y)))
             .height(Length::Fill);
 
-        match self.mode_bar() {
-            // Below the wall rather than over it: with no cursor ring to look
-            // for in `Visual`, the bar is the only thing saying which mode is
-            // live, so it must not be able to hide behind a thumbnail.
-            Some(bar) => Column::with_children(vec![wall.into(), bar]).into(),
-            None => wall.into(),
+        // Always a stack, for the reason `App::view` is one: iced keeps widget
+        // state by position in the tree, so a wall that changed kind the moment
+        // an operation started would hand the scrollable's offset to a
+        // different widget and jump to the top under the user.
+        let mut layers: Vec<Element<'_, Message>> = vec![wall.into()];
+        if let Some(label) = self.progress_label() {
+            layers.push(progress_overlay(label));
+        }
+        Stack::with_children(layers).into()
+    }
+
+    /// What a running operation is doing, or `None` when none is.
+    ///
+    /// A batch and a fingerprint pass cannot overlap — `g` is refused while a
+    /// batch runs, and an operation needs a committed selection, which the pass
+    /// blocks — so there is only ever one thing to report.
+    fn progress_label(&self) -> Option<String> {
+        match (&self.batch, &self.hashing) {
+            (Some(batch), _) => Some(batch.label()),
+            (None, Some(hashing)) => Some(hashing.label()),
+            (None, None) => None,
         }
     }
 

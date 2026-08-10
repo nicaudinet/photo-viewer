@@ -29,11 +29,13 @@ pub(super) const TINT_PENDING: f32 = 0.18;
 /// one, so a partly-selected pile cannot be mistaken for a decided one.
 pub(super) const TINT_PARTIAL: f32 = 0.16;
 
-/// The diameter of the count disc, and how much wider each digit past the first
-/// makes it. A disc that grew to fit a three-digit count would swallow the
-/// corner of the photograph, so it stretches sideways into a pill instead.
-const COUNT_SIZE: f32 = 22.0;
-const COUNT_DIGIT: f32 = 9.0;
+/// The diameter of the count disc, how much wider each digit past the first
+/// makes it, and how big the number inside it is drawn. A disc that grew to fit
+/// a three-digit count would swallow the corner of the photograph, so it
+/// stretches sideways into a pill instead.
+const COUNT_SIZE: f32 = 30.0;
+const COUNT_DIGIT: f32 = 12.0;
+const COUNT_TEXT: f32 = 19.0;
 
 /// How one tile is decorated. `ring` is the border colour, `tint` a
 /// translucent wash over the thumbnail, `badge` the corner checkmark.
@@ -73,7 +75,20 @@ pub(super) fn accent_color(theme: &Theme, accent: Accent) -> Color {
         // Amber, from no palette slot — the four palette roles are spoken for,
         // and a favourite has to be told apart from a selection at a glance.
         Accent::Favourite => Color::from_rgb(0.98, 0.75, 0.18),
-        Accent::Stack => lighten(palette.secondary.base.color, SEL_LIGHTEN),
+        // Near-white, from no palette slot either: the count sits on the
+        // photograph rather than on the background, and a photograph is as
+        // likely to be dark under one theme as the other. A light disc with a
+        // dark number on it is the one pairing that reads over both.
+        Accent::Stack => Color::from_rgb(0.95, 0.95, 0.97),
+    }
+}
+
+/// What a mark's symbol is drawn in: black on the pale accents, which white
+/// would disappear into, white on the saturated ones.
+fn badge_ink(accent: Accent) -> Color {
+    match accent {
+        Accent::Favourite | Accent::Stack => Color::BLACK,
+        _ => Color::WHITE,
     }
 }
 
@@ -99,11 +114,15 @@ pub(crate) fn favourite_star() -> Element<'static, Message> {
 pub(super) fn count_badge(size: usize) -> Element<'static, Message> {
     let label = size.to_string();
     in_corner(
-        container(text(label.clone()).size(14).color(Color::WHITE))
-            .center_x(Length::Fixed(count_width(label.len())))
-            .center_y(Length::Fixed(COUNT_SIZE))
-            .style(|theme: &Theme| pill_style(theme, Accent::Stack))
-            .into(),
+        container(
+            text(label.clone())
+                .size(COUNT_TEXT)
+                .color(badge_ink(Accent::Stack)),
+        )
+        .center_x(Length::Fixed(count_width(label.len())))
+        .center_y(Length::Fixed(COUNT_SIZE))
+        .style(|theme: &Theme| pill_style(theme, Accent::Stack))
+        .into(),
         Horizontal::Right,
         Vertical::Bottom,
     )
@@ -125,13 +144,8 @@ pub(super) fn corner_badge(
     side: Horizontal,
     edge: Vertical,
 ) -> Element<'static, Message> {
-    // The amber is light enough that white on it would not read.
-    let fg = match accent {
-        Accent::Favourite => Color::BLACK,
-        _ => Color::WHITE,
-    };
     in_corner(
-        container(text(symbol).size(18).color(fg))
+        container(text(symbol).size(18).color(badge_ink(accent)))
             .padding([1, 7])
             .style(move |theme: &Theme| pill_style(theme, accent))
             .into(),
